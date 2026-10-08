@@ -30,6 +30,8 @@
     h2::before { content: "■ "; color: var(--accent); }
     .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
     .grid.four { grid-template-columns: repeat(4, 1fr); }
+    .grid.three { grid-template-columns: repeat(3, 1fr); }
+    .grid.three button { padding: 6px 2px; font-size: 12px; }
     .grid.four button { padding: 6px 2px; font-size: 12px; }
     button { font: inherit; color: var(--text); background: rgba(40, 70, 120, 0.35); border: 1px solid var(--line);
       border-radius: 6px; padding: 7px 8px; cursor: pointer; transition: background .15s, border-color .15s; }
@@ -99,11 +101,19 @@
     <label class="tg"><input type="checkbox" id="eq-shield" /> エネルギーシールド(左手)</label>
     <div class="ax"><span>盾の間隔</span><input type="range" id="clearance" min="3" max="20" step="0.5" /><output id="clearance-out"></output></div>
 
-    <h2>サイバーホース</h2>
-    <label class="tg"><input type="checkbox" id="ride" /> 乗車する</label>
-    <div class="ax"><span>速度</span><input type="range" id="speed" min="0" max="40" step="1" value="0" /><output id="speed-out"></output></div>
-    <div class="ax"><span>ハンドル</span><input type="range" id="steer" min="-30" max="30" step="1" value="0" /><output id="steer-out"></output></div>
-    <label class="tg"><input type="checkbox" id="boost" /> リアスラスター噴射</label>
+    <h2>乗り物</h2>
+    <div class="grid three" id="vehicles"></div>
+    <label class="tg"><input type="checkbox" id="ride" /> 乗る</label>
+    <div id="bike-ui" hidden>
+      <div class="ax"><span>速度</span><input type="range" id="speed" min="0" max="40" step="1" value="0" /><output id="speed-out"></output></div>
+      <div class="ax"><span>ハンドル</span><input type="range" id="steer" min="-30" max="30" step="1" value="0" /><output id="steer-out"></output></div>
+      <label class="tg"><input type="checkbox" id="boost" /> リアスラスター噴射</label>
+    </div>
+    <div id="steed-ui" hidden>
+      <div class="grid three" id="steed-modes"></div>
+      <div class="grid three" id="steed-wings" style="margin-top:6px"></div>
+      <div class="grid four" id="steed-expr" style="margin-top:6px"></div>
+    </div>
 
     <h2>外観</h2>
     <label class="tg"><input type="checkbox" id="outline-on" /> 輪郭線</label>
@@ -135,6 +145,7 @@
 
   <script src="./cyber-knight-model.js"></script>
   <script src="./cyber-horse-model.js"></script>
+  <script src="./cyber-steed-model.js"></script>
   <!-- ビューア本体。ファイルを直接開いても(file://)動くよう、外部モジュールにせずここに埋め込む -->
   <script type="module">
 // Cyber Knight Studio: cyber-knight-model.js を読み込んで表示・操作するビューア
@@ -215,7 +226,9 @@ world.scale.setScalar(1 / 2.4);
 scene.add(world);
 const K = Model.create(THREE, world);
 const H = window.CyberHorseModel.create(THREE, world);
+const G = window.CyberSteedModel.create(THREE, world);
 H.root.visible = false;
+G.root.visible = false;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -256,13 +269,30 @@ const pickMode = (m) => { if (K.isRiding()) setRide(false); K.setMode(m); };
 for (const [m, label] of Object.entries(MODE_LABELS)) modeBtns[m] = button('#modes', label, () => pickMode(m));
 for (const [m, label] of Object.entries(ACTION_LABELS)) modeBtns[m] = button('#actions', label, () => pickMode(m), 'action');
 
-// 乗車・走行
+// 乗り物(バイク / 天馬)と乗車
 const rideCb = $('#ride'), speedEl = $('#speed'), steerEl = $('#steer'), boostCb = $('#boost');
+const VEHICLES = { none: ['なし', null], bike: ['バイク', H], steed: ['天馬', G] };
+let vehicle = 'none';
+const SIDE_X = -1.5 * 2.4; // 乗っていないとき、ナイトは乗り物の横に立つ
+function setVehicle(v) {
+  if (K.isRiding()) setRide(false);
+  vehicle = v;
+  H.root.visible = v === 'bike';
+  G.root.visible = v === 'steed';
+  K.root.position.x = v === 'none' ? 0 : SIDE_X;
+  $('#bike-ui').hidden = v !== 'bike';
+  $('#steed-ui').hidden = v !== 'steed';
+  rideCb.disabled = v === 'none';
+  group('#vehicles', vbtn[v]);
+}
+const vbtn = {};
+for (const [k, [label]] of Object.entries(VEHICLES)) vbtn[k] = button('#vehicles', label, () => setVehicle(k));
 function setRide(on) {
-  rideCb.checked = on;
-  H.root.visible = on;
-  H.setStand(on ? 0 : 1);
-  if (on) K.ride(H); else K.dismount();
+  const V = VEHICLES[vehicle][1];
+  rideCb.checked = on && !!V;
+  if (!V) return;
+  if (V === H) H.setStand(on ? 0 : 1);
+  if (on) K.ride(V); else K.dismount();
   syncEquip();
 }
 rideCb.addEventListener('change', () => setRide(rideCb.checked));
@@ -274,9 +304,24 @@ const bikeOut = () => {
 speedEl.addEventListener('input', bikeOut);
 steerEl.addEventListener('input', bikeOut);
 bikeOut();
+const STEED_MODES = { idle: '待機', walk: '歩く', gallop: '駆ける', rear: 'いななき', fly: '飛翔' };
+const smBtn = {};
+for (const [m, label] of Object.entries(STEED_MODES)) smBtn[m] = button('#steed-modes', label, () => { G.setMode(m); group('#steed-modes', smBtn[m]); });
+group('#steed-modes', smBtn.idle);
+const WINGS = { auto: ['翼: 自動', null], spread: ['翼を広げる', 'spread'], fold: ['翼をたたむ', 'fold'] };
+for (const [k, [label, v]] of Object.entries(WINGS)) {
+  const b = button('#steed-wings', label, () => { G.setWings(v); group('#steed-wings', b); });
+  if (k === 'auto') b.classList.add('on');
+}
+const EXPRS = { normal: '通常', joy: '喜び', surprise: '驚き', angry: '怒り' };
+for (const [k, label] of Object.entries(EXPRS)) {
+  const b = button('#steed-expr', label, () => { G.setExpr(k); group('#steed-expr', b); });
+  if (k === 'normal') b.classList.add('on');
+}
+setVehicle('none');
 
 for (const [k, v] of Object.entries(K.COLORS)) {
-  const b = button('#variants', v.label, () => { K.setColor(k); group('#variants', b); });
+  const b = button('#variants', v.label, () => { K.setColor(k); H.setColor(k); G.setColor(k); group('#variants', b); });
   b.style.setProperty('--sw', `#${new THREE.Color(v.paint).getHexString()}`);
   if (k === K.getColor()) b.classList.add('on');
 }
@@ -416,12 +461,15 @@ const clock = new THREE.Clock();
 let t = 0;
 function simulate(dt) {
   t += dt;
-  const v = K.isRiding() ? Number(speedEl.value) : 0; // m/s
+  // 走行速度(m/s): バイクはスライダー、天馬は歩様から
+  const v = vehicle === 'bike' ? (K.isRiding() ? Number(speedEl.value) : 0) : vehicle === 'steed' ? G.getSpeed() : 0;
   const st = (Number(steerEl.value) * Math.PI) / 180;
   H.setSteer(st);
   H.setLean(-st * Math.min(1, v / 8) * 0.7);
   H.update(dt, v * 2.4);
-  K.setWind(v * 0.6);
+  G.setWind(v * 0.6);
+  G.update(dt, t);
+  K.setWind(K.isRiding() ? v * 0.6 : 0);
   grid.position.z = (grid.position.z - v * dt) % 0.25; // 地面の流れで走行感
   K.update(dt, t, camera);
   const sp = sparkGeo.attributes.position.array;
@@ -442,7 +490,7 @@ frame();
 
 // テスト・デバッグ用
 window.__studio = {
-  K, H, camera, controls, bloom, select,
+  K, H, G, camera, controls, bloom, select,
   step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) simulate(dt); },
 };
   </script>

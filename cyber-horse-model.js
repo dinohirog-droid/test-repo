@@ -14,7 +14,7 @@
       id: 'cyber-horse', kind: 'model', version: '2026.10.09', name: 'サイバーホース（バイク）',
       desc: 'サイバーナイト専用の重装バイク。兜の面当てを模したフロントカウル、十字エンブレム、エナジーホイール、リアスラスター。乗り手の座る位置・グリップ・ステップの目印つき',
       create: 'create(THREE, parent, options) → { root, chassis, steerPivot, steer, frontW, rearW, seatMarker, gripTarget, pegMark, update, setSteer, setLean, setBoost, setStand, setColor, ... }',
-      colors: ['normal', 'red', 'black', 'gold'],
+      colors: ['normal', 'red', 'black', 'bloodred', 'gold'],
     },
 
     create: function (THREE, parentNode, options) {
@@ -54,10 +54,22 @@
       const NO_OUTLINE = [M.glow, M.glowSoft, M.red, M.screen, M.slit];
 
       const COLORS = {
-        normal: { paint: 0x1f4fb8 }, red: { paint: 0xa01e2a }, black: { paint: 0x23262e }, gold: { paint: 0xb88a2a },
+        normal: { silver: 0xc4cad4, paint: 0x1f4fb8, trim: 0xd9ad55, glow: 0x2fa4ff },
+        red: { silver: 0xc4cad4, paint: 0xa01e2a, trim: 0xd9ad55, glow: 0xff6a3a },
+        black: { silver: 0x2b2e35, paint: 0x111216, trim: 0xb08a45, glow: 0xff2a3a },
+        bloodred: { silver: 0x8c1822, paint: 0x3a0a12, trim: 0xc9a050, glow: 0xb05cff },
+        gold: { silver: 0xd4ae5a, paint: 0x1f4fb8, trim: 0xf2d590, glow: 0xffc04a },
       };
       let colorId = 'normal';
-      function setColor(id) { if (!COLORS[id]) return; colorId = id; M.paint.color.copy(C(COLORS[id].paint)); }
+      function setColor(id) {
+        const v = COLORS[id];
+        if (!v) return;
+        colorId = id;
+        M.paint.color.copy(C(v.paint)); M.silver.color.copy(C(v.silver)); M.gold.color.copy(C(v.trim));
+        GLOW.copy(C(v.glow)); M.glow.emissive.copy(GLOW); M.glowSoft.emissive.copy(GLOW);
+        swirlMat.color.copy(GLOW).lerp(C(0xffffff), 0.35);
+        crossBase.copy(GLOW).lerp(C(0xffffff), 0.55);
+      }
 
       /* ---------- 形状ヘルパー ---------- */
       function grp(x, y, z, p) { const g = new THREE.Group(); g.position.set(x, y, z); if (p) p.add(g); return g; }
@@ -180,8 +192,8 @@
         const c = document.createElement('canvas'); c.width = c.height = 256;
         const g = c.getContext('2d');
         g.translate(128, 128);
-        g.strokeStyle = 'rgba(120,210,255,0.95)'; g.lineCap = 'round';
-        g.shadowColor = 'rgba(80,190,255,1)'; g.shadowBlur = 10;
+        g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineCap = 'round';
+        g.shadowColor = 'rgba(255,255,255,1)'; g.shadowBlur = 10;
         for (let i = 0; i < 7; i++) {
           g.save(); g.rotate((i / 7) * Math.PI * 2);
           g.lineWidth = 7; g.beginPath(); g.moveTo(40, 0); g.quadraticCurveTo(95, 30, 118, 88); g.stroke();
@@ -189,7 +201,7 @@
           g.restore();
         }
         const rg = g.createRadialGradient(0, 0, 30, 0, 0, 128);
-        rg.addColorStop(0, 'rgba(60,170,255,0.0)'); rg.addColorStop(0.75, 'rgba(60,170,255,0.25)'); rg.addColorStop(1, 'rgba(60,170,255,0)');
+        rg.addColorStop(0, 'rgba(255,255,255,0.0)'); rg.addColorStop(0.75, 'rgba(255,255,255,0.22)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
         g.fillStyle = rg; g.beginPath(); g.arc(0, 0, 128, 0, 7); g.fill();
         return srgbTex(new THREE.CanvasTexture(c));
       })();
@@ -340,7 +352,7 @@
         const c = document.createElement('canvas'); c.width = c.height = 256;
         const g = c.getContext('2d');
         g.translate(128, 128);
-        g.shadowColor = 'rgba(80,190,255,1)'; g.shadowBlur = 18; g.fillStyle = '#bfe8ff';
+        g.shadowColor = 'rgba(255,255,255,1)'; g.shadowBlur = 18; g.fillStyle = '#ffffff';
         const bar = (w, h) => {
           g.beginPath();
           g.moveTo(-w, -h + 26); g.lineTo(-w * 2.3, -h); g.lineTo(0, -h - 18); g.lineTo(w * 2.3, -h); g.lineTo(w, -h + 26);
@@ -351,6 +363,7 @@
         g.save(); g.translate(0, -22); g.rotate(Math.PI / 2); bar(12, 72); g.restore();
         return srgbTex(new THREE.CanvasTexture(c));
       })();
+      const crossBase = new THREE.Color(1, 1, 1);
       const crossMat = new THREE.MeshBasicMaterial({ map: crossTex, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 });
       const cg = new THREE.PlaneGeometry(0.62, 0.62, 24, 24);
       cg.rotateX(-0.95); // ドーム前面の傾きに合わせて置き、斜め上から貼り付ける
@@ -509,7 +522,7 @@
         const w = (speed / WHEEL_R) * dt;
         frontWheelObj.spin.rotation.x += w;
         rearWheelObj.spin.rotation.x += w;
-        crossMat.color.setScalar(gk * (1.6 + 0.4 * Math.sin(time * 2.2)));
+        crossMat.color.copy(crossBase).multiplyScalar(gk * (1.6 + 0.4 * Math.sin(time * 2.2)));
         swirlMat.opacity = 0.75 + 0.2 * Math.sin(time * 3) + Math.min(0.2, Math.abs(speed) * 0.01);
         flames.forEach((f) => {
           f.visible = boost > 0.02;

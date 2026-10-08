@@ -2,14 +2,14 @@
 
 Three.js で作ったサイバーナイトの可動モデルです。形はすべてコードで生成していて、外部の 3D モデルファイルは使っていません。
 
-モデル本体は `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` に登録されます。three r128 〜 r170 で動きます。
+モデル本体は `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js`、愛馬「天馬(装甲ペガサス)」は `cyber-steed-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` / `window.CyberSteedModel` に登録されます。three r128 〜 r170 で動きます。
 
 ## 動かし方
 
 `index.html` をブラウザで開くとスタジオが表示されます(ファイルを直接開いても、ローカルサーバー経由でも動きます)。Three.js は CDN から読み込むので、インターネット接続が必要です。
 
 - `index.html`: スタジオ(r170・ブルーム・操作パネル)
-- `examples/r128.html`: r128 への組み込み例(モーションを巡回し、最後にバイクで走る)
+- `examples/r128.html`: r128 への組み込み例(モーションを巡回し、最後にバイクで走り、天馬で飛ぶ)
 
 ## 組み込み方
 
@@ -32,7 +32,7 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | 名前 | 既定値 | 内容 |
 | --- | --- | --- |
 | `scale` | `2.4` | 縮尺。既定はセリナ(全高 約 4.7)と同じ世界。`1` でメートル単位(全高 1.97) |
-| `color` | `'normal'` | `normal` / `red` / `black` / `gold` |
+| `color` | `'normal'` | `normal`(通常) / `red`(レッド) / `black`(漆黒) / `bloodred`(ブラッドレッド) / `gold`(ゴールド)。甲冑の地金・金縁・発光色・塗装・マント・羽根がまとめて変わる |
 | `mode` | `'idle'` | 開始時のモーション |
 | `outline` / `outlineWidth` | `true` / `0.005` | 輪郭線 |
 | `ik` / `physics` / `look` | `true` | 脚 IK / マントと羽飾りの物理 / カメラ目線 |
@@ -56,7 +56,7 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `editJoint(name, axis, deg)` / `editRoot(axis, m)` | 関節エディタ用。その時点のポーズを保持して編集する(`hold` モード) |
 | `getPose()` / `setExternalPose(P)` / `applyPose(P)` | ポーズの取得と外部からの駆動(乗車など) |
 | `resetPhysics()` | マントと羽飾りを今の姿勢で落ち着かせる |
-| `ride(bike)` / `dismount()` / `isRiding()` | バイクに乗る / 降りる。`seatMarker`・`gripTarget[±1]`・`pegMark{L,R}`・`chassis` を持つバイク(LUNA と同じ形式の目印)に乗る。動作確認はサイバーホースのみ |
+| `ride(vehicle)` / `dismount()` / `isRiding()` | 乗り物に乗る / 降りる。`seatMarker`・`gripTarget[±1]`・`pegMark{L,R}`・`chassis` を持つ乗り物(LUNA と同じ形式の目印)に乗る。`riderStyle`(姿勢・膝の開き)と `riderColliders`(マントの当たり判定)があれば使う。動作確認はサイバーホースと天馬 |
 | `setWind(v)` | 走行風。マントと羽飾りが後ろへなびく |
 
 公開プロパティ: `root`、`joints`(関節名 → Object3D)、`JOINTS`(可動域つきの関節一覧)、`CH`(UI 用チャンネル一覧)、`hands.L/R.grip`(握り点)、`sword`、`shield`、`markers`、`materials`、`poses`。
@@ -82,6 +82,26 @@ horse.setBoost(0..1);          // スラスター噴射
 knight.setWind(speed * 0.25);  // マントが後ろへなびく
 ```
 
+## 天馬(`cyber-steed-model.js`)
+
+設定資料の装甲ペガサスです。縮尺はサイバーナイトと同じ(既定 2.4)。
+
+- 白い馬体(断面をなめらかにつないだ胴・首・頭)、面甲(チャンフロン)・頬当て・首甲・胸甲・肩の板・脚甲・蹄の金縁
+- 鞍、紋章(金の十字)入りの馬衣。前後の馬衣は脚の動きに追従
+- 翼: 肩・肘・手首の 3 関節と、初列・次列・三列風切と雨覆の羽根。白から先端へ色づく。たたむ / 広げる / 羽ばたく
+- たてがみ・前髪・頭の羽飾り・尾は揺れる物理つき。手綱はハミから乗り手の手元へ
+- 動き: `idle`(待機) / `walk`(歩く) / `gallop`(駆ける) / `rear`(いななき) / `fly`(飛翔)
+- 表情: `setExpr('normal' | 'joy' | 'surprise' | 'angry')`(耳・目・頭の角度)
+
+```js
+const steed = CyberSteedModel.create(THREE, scene);
+knight.ride(steed);            // 鞍に座り、手綱を握り、膝を開いて鐙に足を掛ける
+steed.setMode('fly');          // 飛翔
+steed.setWings('spread');      // 'spread' | 'fold' | null(モーション任せ)
+steed.update(dt, t);
+knight.setWind(steed.getSpeed() * 0.6);
+```
+
 ## 機能
 
 - **関節リグ**: 腰・背骨・胸・首・頭・バイザー・肩・肘・前腕ひねり・手首・股関節・膝・足首・つま先。各関節に可動域があり、角度はその範囲に収まるよう制限されます。肘と膝は曲げのみのヒンジで、ひねりは前腕の関節が受け持ちます
@@ -100,5 +120,6 @@ knight.setWind(speed * 0.25);  // マントが後ろへなびく
 | --- | --- |
 | `cyber-knight-model.js` | モデル本体(形状・リグ・IK・モーション・物理・API) |
 | `cyber-horse-model.js` | 専用バイク サイバーホース |
+| `cyber-steed-model.js` | 愛馬 天馬(装甲ペガサス) |
 | `index.html` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
-| `examples/r128.html` | r128 への組み込み例(モーション巡回 + 乗車) |
+| `examples/r128.html` | r128 への組み込み例(モーション巡回 + バイク + 天馬) |

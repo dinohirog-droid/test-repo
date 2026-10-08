@@ -15,7 +15,7 @@
       desc: '古の騎士の意志を継ぐ機械仕掛けの騎士。関節リグ(可動域つき)・脚IK・3節の指・拳で握る盾・連動装甲・マントと羽飾りの物理・剣の軌跡・輪郭線',
       create: 'create(THREE, parent, options) → { root, setMode, update, setColor, setHand, setEquip, setOutline, editJoint, ... }',
       modes: ['idle', 'guard', 'block', 'visor', 'walk', 'run', 'spin', 'charge'],
-      colors: ['normal', 'red', 'black', 'gold'],
+      colors: ['normal', 'red', 'black', 'bloodred', 'gold'],
       hands: ['grip', 'fist', 'open', 'relax'],
       height: 1.97, // scale=1 のときの全高(メートル)
     },
@@ -44,6 +44,7 @@
       }
 
       const GLOW = C(0x2fa4ff);
+      const GLOWC = GLOW.clone(); // 現在の発光色(カラーバリエーションで変わる)
       const gk = options.glowIntensity !== undefined ? options.glowIntensity : 1;
       const metal = (hex, roughness, extra) => new THREE.MeshPhysicalMaterial(Object.assign(
         { color: C(hex), metalness: 1, roughness, side: THREE.DoubleSide }, extra || {}));
@@ -69,10 +70,12 @@
 
       // カラーバリエーション(設定資料の 通常 / レッド / ブラック / ゴールド)
       const COLORS = {
-        normal: { label: '通常', paint: 0x1f4fb8, cloth: '#1d3c9a', clothDark: '#0e1f55', plume: 0x2b5cff },
-        red: { label: 'レッド', paint: 0xa01e2a, cloth: '#8c1822', clothDark: '#45090f', plume: 0xe02b36 },
-        black: { label: 'ブラック', paint: 0x23262e, cloth: '#24262c', clothDark: '#0b0c10', plume: 0x2a2c33 },
-        gold: { label: 'ゴールド', paint: 0xb88a2a, cloth: '#a87a22', clothDark: '#4f3608', plume: 0xe0a53a },
+        // steel=甲冑の地金 / paint=塗装 / trim=金縁 / glow=発光色
+        normal: { label: '通常', steel: 0xc4cad4, paint: 0x1f4fb8, trim: 0xd9ad55, glow: 0x2fa4ff, cloth: '#1d3c9a', clothDark: '#0e1f55', plume: 0x2b5cff },
+        red: { label: 'レッド', steel: 0xc4cad4, paint: 0xa01e2a, trim: 0xd9ad55, glow: 0xff6a3a, cloth: '#8c1822', clothDark: '#45090f', plume: 0xe02b36 },
+        black: { label: '漆黒', steel: 0x2b2e35, paint: 0x111216, trim: 0xb08a45, glow: 0xff2a3a, cloth: '#4a0c14', clothDark: '#140306', plume: 0xc01c26, cross: '#c8202e' },
+        bloodred: { label: 'ブラッドレッド', steel: 0x8c1822, paint: 0x3a0a12, trim: 0xc9a050, glow: 0xb05cff, cloth: '#5a0f18', clothDark: '#22050a', plume: 0x6b3fb0, cross: '#d8c8ff' },
+        gold: { label: 'ゴールド', steel: 0xd4ae5a, paint: 0x1f4fb8, trim: 0xf2d590, glow: 0xffc04a, cloth: '#1d3c9a', clothDark: '#0e1f55', plume: 0xe0a53a },
       };
       // マント用テクスチャ(グラデーション + 金縁 + 背中の十字)
       function capeTexture(v) {
@@ -88,11 +91,11 @@
         }
         g.fillStyle = '#0a0d14'; // 輪郭線のかわりの濃い縁
         g.fillRect(0, 1018, 512, 6); g.fillRect(0, 0, 4, 1024); g.fillRect(508, 0, 4, 1024);
-        g.fillStyle = '#d9ad55';
+        g.fillStyle = '#' + new THREE.Color(v.trim).getHexString();
         g.fillRect(0, 996, 512, 22); g.fillRect(4, 0, 10, 1024); g.fillRect(498, 0, 10, 1024);
         g.fillStyle = 'rgba(217,173,85,0.7)'; g.fillRect(0, 976, 512, 6);
         g.save(); g.translate(256, 380);
-        g.shadowColor = 'rgba(160,220,255,0.9)'; g.shadowBlur = 24; g.fillStyle = '#eef3ff';
+        g.shadowColor = 'rgba(160,220,255,0.9)'; g.shadowBlur = 24; g.fillStyle = v.cross || '#eef3ff';
         const bar = (w, h) => {
           g.beginPath();
           g.moveTo(-w, -h + 30); g.lineTo(-w * 2.2, -h); g.lineTo(0, -h - 26); g.lineTo(w * 2.2, -h); g.lineTo(w, -h + 30);
@@ -108,6 +111,12 @@
         const v = COLORS[id];
         if (!v) return;
         colorId = id;
+        M.steel.color.copy(C(v.steel));
+        M.gold.color.copy(C(v.trim));
+        GLOWC.copy(C(v.glow));
+        M.glow.emissive.copy(GLOWC); M.glowSoft.emissive.copy(GLOWC);
+        M.blade.emissive.copy(GLOWC).multiplyScalar(0.8); M.blade.color.copy(GLOWC).lerp(C(0xffffff), 0.25);
+        M.bladeCore.emissive.copy(GLOWC).lerp(C(0xffffff), 0.6);
         M.paint.color.copy(C(v.paint));
         M.tabard.color.copy(C(v.paint)).multiplyScalar(0.9);
         M.plume.color.copy(C(v.plume));
@@ -803,7 +812,7 @@
       };
       const JNAMES = JOINTS.map((j) => j.name);
       function newPose() {
-        const P = { j: {}, root: [0, 0, 0], yaw: 0, feet: { L: [0.13, 0, 8, 0, 0], R: [-0.13, 0, -8, 0, 0] }, hand: {}, look: 0, trail: 0 };
+        const P = { j: {}, root: [0, 0, 0], yaw: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0 };
         JNAMES.forEach((n) => (P.j[n] = [0, 0, 0]));
         ['L', 'R'].forEach((s) => (P.hand[s] = { c: HANDS.relax.c.slice(), th: HANDS.relax.th, sp: HANDS.relax.sp }));
         return P;
@@ -818,7 +827,7 @@
         for (let i = 0; i < 3; i++) Q.root[i] = P.root[i];
         Q.yaw = P.yaw; Q.look = P.look; Q.trail = P.trail;
         ['L', 'R'].forEach((s) => {
-          Q.feet[s] = P.feet[s].slice(); while (Q.feet[s].length < 5) Q.feet[s].push(0);
+          Q.feet[s] = P.feet[s].slice(); while (Q.feet[s].length < 6) Q.feet[s].push(0);
           Q.hand[s] = { c: P.hand[s].c.slice(), th: P.hand[s].th, sp: P.hand[s].sp };
         });
       }
@@ -826,7 +835,7 @@
         const S = STATIC[name];
         JNAMES.forEach((n) => { const a = S.j[n] || [0, 0, 0]; P.j[n][0] = a[0]; P.j[n][1] = a[1]; P.j[n][2] = a[2]; });
         for (let i = 0; i < 3; i++) P.root[i] = S.root[i];
-        ['L', 'R'].forEach((s) => { P.feet[s] = S.feet[s].slice(); while (P.feet[s].length < 5) P.feet[s].push(0); });
+        ['L', 'R'].forEach((s) => { P.feet[s] = S.feet[s].slice(); while (P.feet[s].length < 6) P.feet[s].push(0); });
         return P;
       }
       // 2 つのポーズの補間。足が移動するときは自動で持ち上げる(ステップ)
@@ -836,7 +845,7 @@
         out.yaw = lerp(A.yaw, B.yaw, k); out.look = lerp(A.look, B.look, k); out.trail = lerp(A.trail, B.trail, k);
         ['L', 'R'].forEach((s) => {
           const a = A.feet[s], b = B.feet[s], o = out.feet[s];
-          for (let i = 0; i < 5; i++) o[i] = lerp(a[i], b[i], k);
+          for (let i = 0; i < 6; i++) o[i] = lerp(a[i] || 0, b[i] || 0, k);
           o[3] += Math.sin(Math.PI * k) * Math.min(0.12, Math.hypot(b[0] - a[0], b[1] - a[1]) * 0.45);
           const ha = A.hand[s], hb = B.hand[s], ho = out.hand[s];
           for (let i = 0; i < 4; i++) ho.c[i] = lerp(ha.c[i], hb.c[i], k);
@@ -904,17 +913,18 @@
         // 乗車: 腰を座席の目印に置き、脚 IK で足をステップへ。腕は applyPose で IK によりグリップへ
         ride: (P, t) => {
           fromStatic(P, 'idle');
-          P.j.hips = [24, 0, 0]; P.j.spine = [14, 0, 0]; P.j.chest = [8, 0, 0]; P.j.neck = [-16, 0, 0]; P.j.head = [-20, 0, 0];
+          const st = Object.assign({ hips: [24, 0, 0], spine: [14, 0, 0], chest: [8, 0, 0], neck: [-16, 0, 0], head: [-20, 0, 0], kneeOut: 0, seatLift: 0.12 }, rideT && rideT.style);
+          ['hips', 'spine', 'chest', 'neck', 'head'].forEach((n) => (P.j[n] = st[n].slice()));
           breathe(P, t, 0.5);
           P.look = 0.25;
           ['L', 'R'].forEach((s) => { P.hand[s] = { c: HANDS.grip.c.slice(), th: HANDS.grip.th, sp: 0 }; });
           if (!rideT) return;
           knight.updateWorldMatrix(true, false);
           const seat = knight.worldToLocal(rideT.seat.getWorldPosition(V3(0, 0, 0)));
-          P.root = [seat.x, seat.y + 0.12 - JL.hips.rest.y, seat.z + 0.02];
+          P.root = [seat.x, seat.y + st.seatLift - JL.hips.rest.y, seat.z + 0.02];
           ['L', 'R'].forEach((s) => {
             const pg = knight.worldToLocal(rideT.pegs[s].getWorldPosition(V3(0, 0, 0)));
-            P.feet[s] = [pg.x, pg.z - 0.09, 0, pg.y + 0.07 - ANKLE_H, 15];
+            P.feet[s] = [pg.x, pg.z - 0.09, 0, pg.y + 0.07 - ANKLE_H, 15, (s === 'L' ? 1 : -1) * st.kneeOut];
           });
         },
       };
@@ -958,7 +968,8 @@
         const dist = clamp(d.length(), 0.08, (L1 + L2) * 0.9995);
         const aim = d.normalize().clone();
         const yaw = f[2] * D2R;
-        const pole = V3(Math.sin(yaw) * 0.9, 0, Math.cos(yaw)).normalize();
+        const py = (f[2] + (f[5] || 0)) * D2R; // f[5]: 膝を外へ開く角度(騎乗で馬の胴をまたぐ)
+        const pole = V3(Math.sin(py) * 0.9, 0, Math.cos(py)).normalize();
         pole.applyQuaternion(knight.getWorldQuaternion(_q));
         pole.applyQuaternion(hips.getWorldQuaternion(_q2).invert());
         const perp = pole.sub(aim.clone().multiplyScalar(pole.dot(aim))).normalize();
@@ -1255,7 +1266,7 @@
       })();
 
       const trail = (function () {
-        const n = 32, LIFE = 0.22, samples = [], color = GLOW.clone();
+        const n = 32, LIFE = 0.22, samples = [], color = GLOWC;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
         geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
@@ -1387,12 +1398,12 @@
         ride: (bike) => {
           if (!bike) return;
           if (!rideT) rideSaved = { parent: root.parent, pos: root.position.clone(), quat: root.quaternion.clone(), equip: Object.assign({}, equip) };
-          rideT = { bike, seat: bike.seatMarker, grips: { L: bike.gripTarget[1], R: bike.gripTarget[-1] }, pegs: bike.pegMark };
+          rideT = { bike, seat: bike.seatMarker, grips: { L: bike.gripTarget[1], R: bike.gripTarget[-1] }, pegs: bike.pegMark, style: bike.riderStyle };
           bike.chassis.add(root);
           root.position.set(0, 0, 0); root.quaternion.identity();
           setEquip({ sword: false, shield: false });
           const ch = bike.chassis;
-          cape.setExtra([[-0.7, 0.42], [-1.2, 0.42], [-1.7, 0.4], [-2.2, 0.32]].map((z) => ({ obj: ch, c: [0, 2.12, z[0]], r: z[1] })).concat([{ obj: ch, c: [0, 0.95, -1.95], r: 1.0 }]));
+          cape.setExtra(bike.riderColliders || [[-0.7, 0.42], [-1.2, 0.42], [-1.7, 0.4], [-2.2, 0.32]].map((z) => ({ obj: ch, c: [0, 2.12, z[0]], r: z[1] })).concat([{ obj: ch, c: [0, 0.95, -1.95], r: 1.0 }]));
           setMode('ride');
         },
         dismount: () => {

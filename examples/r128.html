@@ -11,6 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="../cyber-knight-model.js"></script>
   <script src="../cyber-horse-model.js"></script>
+  <script src="../cyber-steed-model.js"></script>
   <script>
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -48,17 +49,18 @@
 
     const knight = CyberKnightModel.create(THREE, scene, { glowIntensity: 0.35 });
     const horse = CyberHorseModel.create(THREE, scene, { glowIntensity: 0.35 });
+    const steed = CyberSteedModel.create(THREE, scene, { glowIntensity: 0.35 });
     horse.root.visible = false;
-    // 3 秒ごとにモーションを切り替え、最後はバイクに乗って走る
-    const modes = ['idle', 'walk', 'guard', 'spin', 'block', 'run', 'charge', 'visor', 'ride'];
+    steed.root.visible = false;
+    // 3 秒ごとにモーションを切り替え、最後はバイクで走り、天馬で飛ぶ
+    const modes = ['idle', 'walk', 'guard', 'spin', 'block', 'run', 'charge', 'visor', 'ride', 'steed'];
     let i = -1;
     setInterval(() => {
       const m = modes[++i % modes.length];
+      if (knight.isRiding()) { knight.dismount(); horse.root.visible = steed.root.visible = false; horse.setStand(1); }
       if (m === 'ride') { horse.root.visible = true; horse.setStand(0); knight.ride(horse); }
-      else {
-        if (knight.isRiding()) { knight.dismount(); horse.root.visible = false; horse.setStand(1); }
-        knight.setMode(m);
-      }
+      else if (m === 'steed') { steed.root.visible = true; steed.setMode('fly'); knight.ride(steed); }
+      else knight.setMode(m);
     }, 3000);
 
     const clock = new THREE.Clock();
@@ -66,9 +68,10 @@
     (function loop() {
       const dt = clock.getDelta();
       t += dt;
-      const v = knight.isRiding() ? 8 : 0; // 乗車中は走らせる
+      const v = horse.root.visible ? 8 : steed.root.visible ? steed.getSpeed() : 0; // 乗車中は走らせる
       horse.update(dt, v * 2.4);
-      horse.setBoost(v ? 0.6 : 0);
+      horse.setBoost(horse.root.visible ? 0.6 : 0);
+      steed.update(dt, t);
       knight.setWind(v * 0.6);
       knight.update(dt, t, camera);
       renderer.render(scene, camera);
