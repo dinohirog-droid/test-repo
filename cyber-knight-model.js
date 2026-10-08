@@ -901,6 +901,22 @@
           P.look = 0;
         },
         hold: (P) => copyPose(P, held), // 関節エディタで手動編集中
+        // 乗車: 腰を座席の目印に置き、脚 IK で足をステップへ。腕は applyPose で IK によりグリップへ
+        ride: (P, t) => {
+          fromStatic(P, 'idle');
+          P.j.hips = [24, 0, 0]; P.j.spine = [14, 0, 0]; P.j.chest = [8, 0, 0]; P.j.neck = [-16, 0, 0]; P.j.head = [-20, 0, 0];
+          breathe(P, t, 0.5);
+          P.look = 0.25;
+          ['L', 'R'].forEach((s) => { P.hand[s] = { c: HANDS.grip.c.slice(), th: HANDS.grip.th, sp: 0 }; });
+          if (!rideT) return;
+          knight.updateWorldMatrix(true, false);
+          const seat = knight.worldToLocal(rideT.seat.getWorldPosition(V3(0, 0, 0)));
+          P.root = [seat.x, seat.y + 0.12 - JL.hips.rest.y, seat.z + 0.02];
+          ['L', 'R'].forEach((s) => {
+            const pg = knight.worldToLocal(rideT.pegs[s].getWorldPosition(V3(0, 0, 0)));
+            P.feet[s] = [pg.x, pg.z - 0.09, 0, pg.y + 0.07 - ANKLE_H, 15];
+          });
+        },
       };
       const ACTIONS = { spin: { dur: 1.95, next: 'guard' }, charge: { dur: 1.5, next: 'guard' } };
 
@@ -915,6 +931,7 @@
       let blendT = 1, blendDur = 0.5;
       let external = null;
       let lookYaw = 0, lookPitch = 0;
+      let rideT = null, rideSaved = null, armW = 0, wind = 0;
       MODES[currentMode](cur, 0);
 
       function setMode(m) {
@@ -961,6 +978,42 @@
         });
       }
 
+      // 腕の 2 ボーン IK(乗車用): 握り点をグリップに合わせ、手の甲を上・人差し指を内側へ向ける
+      const _a = V3(0, 0, 0), _b = V3(0, 0, 0), _c = V3(0, 0, 0), _hq = new THREE.Quaternion(), _ws = V3(0, 0, 0);
+      function solveArm(s, P, w) {
+        const m = s === 'L' ? 1 : -1;
+        const chest = J.chest, sh = J['shoulder_' + s], el = J['elbow_' + s], fa = J['forearm_' + s], wr = J['wrist_' + s];
+        const grip = rideT.grips[s];
+        const gq = grip.getWorldQuaternion(_q);
+        const Xb = _a.set(1, 0, 0).applyQuaternion(gq), Up = _b.set(0, 1, 0).applyQuaternion(gq);
+        const Zh = Xb.clone().multiplyScalar(-m), Xh = Up.clone().multiplyScalar(m).normalize();
+        const Yh = V3(0, 0, 0).crossVectors(Zh, Xh);
+        _hq.setFromRotationMatrix(_m.makeBasis(Xh, Yh, Zh));
+        model.getWorldScale(_ws);
+        const wristW = grip.getWorldPosition(_c).sub(hands[s].grip.position.clone().multiplyScalar(_ws.x).applyQuaternion(_hq));
+        const tl = chest.worldToLocal(wristW.clone());
+        const L1 = el.position.length(), L2 = wr.position.length();
+        const d = tl.sub(sh.position);
+        const dist = clamp(d.length(), 0.05, (L1 + L2) * 0.999);
+        const aim = d.normalize();
+        const pole = V3(m * 0.75, -0.45, -0.5).normalize();
+        const perp = pole.sub(aim.clone().multiplyScalar(pole.dot(aim))).normalize();
+        const a = Math.acos(clamp((L1 * L1 + dist * dist - L2 * L2) / (2 * L1 * dist), -1, 1));
+        const upper = aim.clone().multiplyScalar(Math.cos(a)).add(perp.clone().multiplyScalar(Math.sin(a)));
+        const yAx = upper.clone().negate();
+        const zAx = perp.clone().sub(upper.clone().multiplyScalar(perp.dot(upper))).normalize().negate();
+        const xAx = V3(0, 0, 0).crossVectors(yAx, zAx);
+        sh.quaternion.slerp(_q2.setFromRotationMatrix(_m.makeBasis(xAx, yAx, zAx)), w);
+        el.quaternion.slerp(_q2.setFromAxisAngle(XA, -(Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - dist * dist) / (2 * L1 * L2), -1, 1)))), w);
+        fa.quaternion.slerp(_q2.identity(), w);
+        fa.updateWorldMatrix(true, false);
+        wr.quaternion.slerp(fa.getWorldQuaternion(_q3).invert().multiply(_hq), w);
+        [sh, el, fa, wr].forEach((o) => {
+          const a3 = P.j[o.name];
+          a3[0] = o.rotation.x * R2D; a3[1] = o.rotation.y * R2D; a3[2] = o.rotation.z * R2D;
+        });
+      }
+
       function applyPose(P) {
         JOINTS.forEach((j) => {
           if (state.ik && isLeg(j.name)) return;
@@ -974,6 +1027,7 @@
         knight.rotation.y = P.yaw * D2R;
         root.updateMatrixWorld(true);
         if (state.ik) { solveLeg('L', P); solveLeg('R', P); }
+        if (rideT && armW > 0.001) { solveArm('L', P, armW); solveArm('R', P, armW); }
         ['L', 'R'].forEach((s) => {
           const holding = s === 'R' ? equip.sword : equip.shield;
           const h = holding ? HANDS.grip : handOverride[s] ? HANDS[handOverride[s]] : P.hand[s];
@@ -1034,7 +1088,9 @@
         mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
         fx.add(mesh);
         const pins = pinsLocal.map(() => V3(0, 0, 0));
-        const cols3 = colliders.map((c) => ({ obj: c.obj, c: V3(c.c[0], c.c[1], c.c[2]), r: c.r, w: V3(0, 0, 0) }));
+        const mkCol = (c) => ({ obj: c.obj, c: V3(c.c[0], c.c[1], c.c[2]), r: c.r, w: V3(0, 0, 0), rw: c.r });
+        const cols3 = colliders.map(mkCol), colScale = V3(0, 0, 0);
+        let extra = [];
         const chestInv = new THREE.Matrix4(), chestM = new THREE.Matrix4(), tv = V3(0, 0, 0);
         let time = 0;
         function updatePins() {
@@ -1053,8 +1109,8 @@
               tv.applyMatrix4(chestM);
               pos[k] = tv.x; pos[k + 1] = tv.y; pos[k + 2] = tv.z;
             }
-            for (let j = 0; j < cols3.length; j++) {
-              const c = cols3[j], r = c.r + 0.018;
+            for (let j = 0; j < cols3.length + extra.length; j++) {
+              const c = j < cols3.length ? cols3[j] : extra[j - cols3.length], r = c.rw + 0.018;
               const ddx = pos[k] - c.w.x, ddy = pos[k + 1] - c.w.y, ddz = pos[k + 2] - c.w.z;
               const d2 = ddx * ddx + ddy * ddy + ddz * ddz;
               if (d2 < r * r) {
@@ -1069,14 +1125,19 @@
         function step(dt) {
           time += dt;
           updatePins();
-          cols3.forEach((c) => c.w.copy(c.c).applyMatrix4(toFx(c.obj)));
-          const g = -9.8 * dt * dt, wind = (0.6 + Math.sin(time * 0.7) * 0.4) * dt * dt, damp = 0.985;
+          // コライダーの中心と半径を fx 空間へ(バイクなど縮尺の違う物体にも対応)
+          cols3.concat(extra).forEach((c) => {
+            const mtx = toFx(c.obj);
+            c.w.copy(c.c).applyMatrix4(mtx);
+            c.rw = c.r * colScale.setFromMatrixColumn(mtx, 0).length();
+          });
+          const g = -9.8 * dt * dt, breeze = (0.6 + Math.sin(time * 0.7) * 0.4 + wind) * dt * dt, damp = 0.985;
           for (let i = cols; i < n; i++) {
             const k = i * 3, x = pos[k], y = pos[k + 1], z = pos[k + 2];
             const gust = Math.sin(time * 2.3 + i * 0.37) * 0.6;
-            pos[k] += (x - prev[k]) * damp + gust * wind * 0.4;
+            pos[k] += (x - prev[k]) * damp + gust * breeze * 0.4;
             pos[k + 1] += (y - prev[k + 1]) * damp + g;
-            pos[k + 2] += (z - prev[k + 2]) * damp - wind * (1 + gust);
+            pos[k + 2] += (z - prev[k + 2]) * damp - breeze * (1 + gust);
             prev[k] = x; prev[k + 1] = y; prev[k + 2] = z;
           }
           for (let it = 0; it < 12; it++) {
@@ -1113,7 +1174,7 @@
           geo.attributes.position.needsUpdate = true;
           geo.computeVertexNormals();
         }
-        return { mesh, reset, update };
+        return { mesh, reset, update, setExtra: (list) => { extra = (list || []).map(mkCol); } };
       })();
 
       const plume = (function () {
@@ -1180,6 +1241,7 @@
               q[i].copy(p[i]);
               p[i].add(v).add(w.sub(p[i]).multiplyScalar(k));
               p[i].y += g;
+              p[i].z -= wind * 0.5 * dt * dt; // 走行風
             }
             for (let it = 0; it < 3; it++) for (let i = 2; i < SEG; i++) {
               const a = p[i - 1], b = p[i], d = b.clone().sub(a), l = d.length() || 1e-6;
@@ -1243,6 +1305,7 @@
             blendPose(cur, from, target, smooth(blendT));
           } else copyPose(cur, target);
         }
+        armW = rideT && currentMode === 'ride' && !external ? smooth(blendT) : 0;
         // カメラ目線(首 35% / 頭 65% に分配)
         let ty = 0, tp = 0;
         if (state.look && camera && cur.look > 0.001) {
@@ -1320,7 +1383,31 @@
         setPhysics: (on) => { state.physics = !!on; },
         setLook: (on) => { state.look = !!on; },
         setGlowPulse: (on) => { state.pulse = !!on; },
-        setGlowPulse: (on) => { state.pulse = !!on; },
+        // バイクに乗る(LUNA / サイバーホース形式: seatMarker・gripTarget[±1]・pegMark{L,R}・chassis)
+        ride: (bike) => {
+          if (!bike) return;
+          if (!rideT) rideSaved = { parent: root.parent, pos: root.position.clone(), quat: root.quaternion.clone(), equip: Object.assign({}, equip) };
+          rideT = { bike, seat: bike.seatMarker, grips: { L: bike.gripTarget[1], R: bike.gripTarget[-1] }, pegs: bike.pegMark };
+          bike.chassis.add(root);
+          root.position.set(0, 0, 0); root.quaternion.identity();
+          setEquip({ sword: false, shield: false });
+          const ch = bike.chassis;
+          cape.setExtra([[-0.7, 0.42], [-1.2, 0.42], [-1.7, 0.4], [-2.2, 0.32]].map((z) => ({ obj: ch, c: [0, 2.12, z[0]], r: z[1] })).concat([{ obj: ch, c: [0, 0.95, -1.95], r: 1.0 }]));
+          setMode('ride');
+        },
+        dismount: () => {
+          if (!rideT) return;
+          const sv = rideSaved;
+          rideT = null; rideSaved = null;
+          if (sv.parent) sv.parent.add(root); else if (root.parent) root.parent.remove(root);
+          root.position.copy(sv.pos); root.quaternion.copy(sv.quat);
+          setEquip(sv.equip);
+          cape.setExtra([]);
+          wind = 0;
+          setMode('idle');
+        },
+        isRiding: () => !!rideT,
+        setWind: (v) => { wind = Math.max(0, v || 0); },
         getState: () => Object.assign({}, state),
         editJoint, editRoot,
         getPose: () => clonePose(cur),

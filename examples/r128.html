@@ -10,6 +10,7 @@
   <!-- 組み込み例: three r128(グローバル THREE)+ モデル既定の縮尺(セリナと同じ世界) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="../cyber-knight-model.js"></script>
+  <script src="../cyber-horse-model.js"></script>
   <script>
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -46,15 +47,29 @@
     camera.lookAt(0, 2.3, 0);
 
     const knight = CyberKnightModel.create(THREE, scene, { glowIntensity: 0.35 });
-    const modes = ['idle', 'walk', 'guard', 'spin', 'block', 'run', 'charge', 'visor'];
-    let i = 0;
-    setInterval(() => knight.setMode(modes[++i % modes.length]), 3000);
+    const horse = CyberHorseModel.create(THREE, scene, { glowIntensity: 0.35 });
+    horse.root.visible = false;
+    // 3 秒ごとにモーションを切り替え、最後はバイクに乗って走る
+    const modes = ['idle', 'walk', 'guard', 'spin', 'block', 'run', 'charge', 'visor', 'ride'];
+    let i = -1;
+    setInterval(() => {
+      const m = modes[++i % modes.length];
+      if (m === 'ride') { horse.root.visible = true; horse.setStand(0); knight.ride(horse); }
+      else {
+        if (knight.isRiding()) { knight.dismount(); horse.root.visible = false; horse.setStand(1); }
+        knight.setMode(m);
+      }
+    }, 3000);
 
     const clock = new THREE.Clock();
     let t = 0;
     (function loop() {
       const dt = clock.getDelta();
       t += dt;
+      const v = knight.isRiding() ? 8 : 0; // 乗車中は走らせる
+      horse.update(dt, v * 2.4);
+      horse.setBoost(v ? 0.6 : 0);
+      knight.setWind(v * 0.6);
       knight.update(dt, t, camera);
       renderer.render(scene, camera);
       requestAnimationFrame(loop);

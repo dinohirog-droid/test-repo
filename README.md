@@ -2,14 +2,14 @@
 
 Three.js で作ったサイバーナイトの可動モデルです。形はすべてコードで生成していて、外部の 3D モデルファイルは使っていません。
 
-モデル本体は `cyber-knight-model.js` の 1 ファイルです。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` に登録されます。three r128 〜 r170 で動きます。
+モデル本体は `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` に登録されます。three r128 〜 r170 で動きます。
 
 ## 動かし方
 
 `index.html` をブラウザで開くとスタジオが表示されます(ファイルを直接開いても、ローカルサーバー経由でも動きます)。Three.js は CDN から読み込むので、インターネット接続が必要です。
 
 - `index.html`: スタジオ(r170・ブルーム・操作パネル)
-- `examples/r128.html`: r128 への組み込み例
+- `examples/r128.html`: r128 への組み込み例(モーションを巡回し、最後にバイクで走る)
 
 ## 組み込み方
 
@@ -37,7 +37,6 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `outline` / `outlineWidth` | `true` / `0.005` | 輪郭線 |
 | `ik` / `physics` / `look` | `true` | 脚 IK / マントと羽飾りの物理 / カメラ目線 |
 | `glowPulse` | `true` | 発光パーツのゆっくりした点滅 |
-| `glowPulse` | `true` | 発光パーツのゆっくりした点滅 |
 | `sword` / `shield` | `true` | 武装 |
 | `shieldClearance` | `0.055` | 盾の裏面から取っ手までの距離(m) |
 | `glowIntensity` | `1` | 発光の強さの倍率 |
@@ -57,8 +56,31 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `editJoint(name, axis, deg)` / `editRoot(axis, m)` | 関節エディタ用。その時点のポーズを保持して編集する(`hold` モード) |
 | `getPose()` / `setExternalPose(P)` / `applyPose(P)` | ポーズの取得と外部からの駆動(乗車など) |
 | `resetPhysics()` | マントと羽飾りを今の姿勢で落ち着かせる |
+| `ride(bike)` / `dismount()` / `isRiding()` | バイクに乗る / 降りる。`seatMarker`・`gripTarget[±1]`・`pegMark{L,R}`・`chassis` を持つバイク(サイバーホース、LUNA)に対応 |
+| `setWind(v)` | 走行風。マントと羽飾りが後ろへなびく |
 
 公開プロパティ: `root`、`joints`(関節名 → Object3D)、`JOINTS`(可動域つきの関節一覧)、`CH`(UI 用チャンネル一覧)、`hands.L/R.grip`(握り点)、`sword`、`shield`、`markers`、`materials`、`poses`。
+
+## サイバーホース(`cyber-horse-model.js`)
+
+設定資料の専用重装バイクです。縮尺は LUNA と同じ(セリナの世界)。
+
+- 兜の面当てを模したフロントカウル(縦スリット + 金の稜線)と、青いドームの十字エンブレム
+- 金のトレリスフレーム、露出したエンジン、倒立フォーク、モノショック
+- エナジーホイール(渦の発光 + トレッドの発光ライン)
+- 右側のツインマフラー兼リアスラスター(噴射炎)、テールの左右スラスターとテールランプ
+- メーター、スクリーン、サイドスタンド
+- 乗り手の目印 `seatMarker`・`gripTarget[1](左) / [-1](右)`・`pegMark.L / R`
+
+```js
+const horse = CyberHorseModel.create(THREE, scene);
+knight.ride(horse);            // 座席に座り、手はグリップ、足はステップへ(腕と脚の IK)
+horse.update(dt, speed);       // ホイールの回転・メーター
+horse.setSteer(rad);           // ハンドル(握った手も追従)
+horse.setLean(rad);            // 車体の傾き(乗り手ごと傾く)
+horse.setBoost(0..1);          // スラスター噴射
+knight.setWind(speed * 0.25);  // マントが後ろへなびく
+```
 
 ## 機能
 
@@ -77,5 +99,6 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | ファイル | 内容 |
 | --- | --- |
 | `cyber-knight-model.js` | モデル本体(形状・リグ・IK・モーション・物理・API) |
+| `cyber-horse-model.js` | 専用バイク サイバーホース |
 | `index.html` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
-| `examples/r128.html` | r128 への組み込み例 |
+| `examples/r128.html` | r128 への組み込み例(モーション巡回 + 乗車) |

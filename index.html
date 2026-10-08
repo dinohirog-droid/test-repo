@@ -99,6 +99,12 @@
     <label class="tg"><input type="checkbox" id="eq-shield" /> エネルギーシールド(左手)</label>
     <div class="ax"><span>盾の間隔</span><input type="range" id="clearance" min="3" max="20" step="0.5" /><output id="clearance-out"></output></div>
 
+    <h2>サイバーホース</h2>
+    <label class="tg"><input type="checkbox" id="ride" /> 乗車する</label>
+    <div class="ax"><span>速度</span><input type="range" id="speed" min="0" max="40" step="1" value="0" /><output id="speed-out"></output></div>
+    <div class="ax"><span>ハンドル</span><input type="range" id="steer" min="-30" max="30" step="1" value="0" /><output id="steer-out"></output></div>
+    <label class="tg"><input type="checkbox" id="boost" /> リアスラスター噴射</label>
+
     <h2>外観</h2>
     <label class="tg"><input type="checkbox" id="outline-on" /> 輪郭線</label>
     <div class="ax"><span>線の太さ</span><input type="range" id="outline-w" min="1" max="8" step="0.25" /><output></output></div>
@@ -108,7 +114,6 @@
     <label class="tg"><input type="checkbox" data-toggle="ik" checked /> 脚 IK(足を接地させる)</label>
     <label class="tg"><input type="checkbox" data-toggle="physics" checked /> マント・羽飾りの物理</label>
     <label class="tg"><input type="checkbox" data-toggle="look" checked /> カメラ目線</label>
-    <label class="tg"><input type="checkbox" data-toggle="pulse" checked /> 発光の点滅</label>
     <label class="tg"><input type="checkbox" data-toggle="pulse" checked /> 発光の点滅</label>
     <label class="tg"><input type="checkbox" data-toggle="spin" /> カメラ自動回転</label>
   </div>
@@ -129,6 +134,7 @@
   <div class="hint">ドラッグで回転 ・ ホイールでズーム ・ 右ドラッグで移動</div>
 
   <script src="./cyber-knight-model.js"></script>
+  <script src="./cyber-horse-model.js"></script>
   <!-- ビューア本体。ファイルを直接開いても(file://)動くよう、外部モジュールにせずここに埋め込む -->
   <script type="module">
 // Cyber Knight Studio: cyber-knight-model.js を読み込んで表示・操作するビューア
@@ -203,7 +209,13 @@ sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
 scene.add(new THREE.Points(sparkGeo, new THREE.PointsMaterial({ color: 0x6cc6ff, size: 0.018, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false })));
 
 // ---------- ナイト ----------
-const K = Model.create(THREE, scene, { scale: 1 });
+// モデルはセリナと同じ世界の縮尺(既定 2.4)で作り、表示用にメートルへ縮める
+const world = new THREE.Group();
+world.scale.setScalar(1 / 2.4);
+scene.add(world);
+const K = Model.create(THREE, world);
+const H = window.CyberHorseModel.create(THREE, world);
+H.root.visible = false;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -240,8 +252,28 @@ const group = (sel, b) => document.querySelectorAll(`${sel} button`).forEach((x)
 const MODE_LABELS = { idle: '待機', guard: '構え', block: '防御', visor: '素顔', walk: '歩く', run: '走る' };
 const ACTION_LABELS = { spin: '回転斬り', charge: '突進' };
 const modeBtns = {};
-for (const [m, label] of Object.entries(MODE_LABELS)) modeBtns[m] = button('#modes', label, () => K.setMode(m));
-for (const [m, label] of Object.entries(ACTION_LABELS)) modeBtns[m] = button('#actions', label, () => K.setMode(m), 'action');
+const pickMode = (m) => { if (K.isRiding()) setRide(false); K.setMode(m); };
+for (const [m, label] of Object.entries(MODE_LABELS)) modeBtns[m] = button('#modes', label, () => pickMode(m));
+for (const [m, label] of Object.entries(ACTION_LABELS)) modeBtns[m] = button('#actions', label, () => pickMode(m), 'action');
+
+// 乗車・走行
+const rideCb = $('#ride'), speedEl = $('#speed'), steerEl = $('#steer'), boostCb = $('#boost');
+function setRide(on) {
+  rideCb.checked = on;
+  H.root.visible = on;
+  H.setStand(on ? 0 : 1);
+  if (on) K.ride(H); else K.dismount();
+  syncEquip();
+}
+rideCb.addEventListener('change', () => setRide(rideCb.checked));
+boostCb.addEventListener('change', () => H.setBoost(boostCb.checked ? 1 : 0));
+const bikeOut = () => {
+  $('#speed-out').textContent = `${Math.round(speedEl.value * 3.6)} km/h`;
+  $('#steer-out').textContent = `${steerEl.value}°`;
+};
+speedEl.addEventListener('input', bikeOut);
+steerEl.addEventListener('input', bikeOut);
+bikeOut();
 
 for (const [k, v] of Object.entries(K.COLORS)) {
   const b = button('#variants', v.label, () => { K.setColor(k); group('#variants', b); });
@@ -291,7 +323,6 @@ const toggles = {
   ik: (on) => { K.setIK(on); syncEditor(true); },
   physics: (on) => K.setPhysics(on),
   look: (on) => K.setLook(on),
-  pulse: (on) => K.setGlowPulse(on),
   pulse: (on) => K.setGlowPulse(on),
   spin: (on) => (controls.autoRotate = on),
 };
@@ -385,6 +416,13 @@ const clock = new THREE.Clock();
 let t = 0;
 function simulate(dt) {
   t += dt;
+  const v = K.isRiding() ? Number(speedEl.value) : 0; // m/s
+  const st = (Number(steerEl.value) * Math.PI) / 180;
+  H.setSteer(st);
+  H.setLean(-st * Math.min(1, v / 8) * 0.7);
+  H.update(dt, v * 2.4);
+  K.setWind(v * 0.6);
+  grid.position.z = (grid.position.z - v * dt) % 0.25; // 地面の流れで走行感
   K.update(dt, t, camera);
   const sp = sparkGeo.attributes.position.array;
   for (let i = 1; i < sp.length; i += 3) sp[i] = sp[i] > 3.5 ? 0 : sp[i] + dt * 0.08;
@@ -404,7 +442,7 @@ frame();
 
 // テスト・デバッグ用
 window.__studio = {
-  K, camera, controls, bloom, select,
+  K, H, camera, controls, bloom, select,
   step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) simulate(dt); },
 };
   </script>
