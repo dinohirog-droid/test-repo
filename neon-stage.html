@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Neon Ride</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --pink: #ff3fa4; --cyan: #3ff0ff; --text: #eaf2ff; --dim: #9aa6c4; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #05030c; color: var(--text);
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; user-select: none; -webkit-user-select: none; }
+    #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .hud { position: fixed; pointer-events: none; text-shadow: 0 0 10px rgba(63, 240, 255, 0.6); }
+    #speed { right: 24px; bottom: 20px; text-align: right; }
+    #speed b { font-family: Orbitron, sans-serif; font-size: 56px; color: var(--cyan); display: block; line-height: 1; }
+    #speed span { font-size: 12px; color: var(--dim); letter-spacing: 0.15em; }
+    #boostbar { width: 180px; height: 8px; border: 1px solid rgba(63, 240, 255, 0.6); border-radius: 4px; margin: 8px 0 0 auto; overflow: hidden; }
+    #boostbar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3ff0ff, #ff3fa4); }
+    #dist { left: 24px; top: 18px; }
+    #dist b { font-family: Orbitron, sans-serif; font-size: 26px; color: var(--pink); text-shadow: 0 0 10px rgba(255, 63, 164, 0.7); }
+    #dist div { font-size: 12px; color: var(--dim); margin-top: 4px; }
+    #flash { position: fixed; inset: 0; background: radial-gradient(circle, rgba(255, 80, 120, 0.0) 40%, rgba(255, 40, 90, 0.55)); opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+    #title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(ellipse at center, rgba(10, 4, 30, 0.35), rgba(5, 3, 12, 0.85)); }
+    #title h1 { font-family: Orbitron, sans-serif; font-size: clamp(32px, 7vw, 72px); margin: 0; letter-spacing: 0.08em;
+      color: #fff; text-shadow: 0 0 12px var(--pink), 0 0 32px var(--pink); }
+    #title p { margin: 0; color: var(--cyan); letter-spacing: 0.3em; font-size: 13px; }
+    #title .keys { color: var(--dim); font-size: 13px; text-align: center; line-height: 1.8; }
+    button { font: inherit; color: #fff; background: rgba(255, 63, 164, 0.18); border: 1px solid var(--pink); border-radius: 8px;
+      padding: 12px 28px; cursor: pointer; letter-spacing: 0.15em; box-shadow: 0 0 18px rgba(255, 63, 164, 0.4); }
+    button:hover { background: rgba(255, 63, 164, 0.35); }
+    #topbar { position: fixed; right: 16px; top: 14px; display: flex; gap: 8px; }
+    #topbar button, #topbar a { padding: 6px 12px; font-size: 12px; letter-spacing: 0.05em; color: #fff; text-decoration: none;
+      background: rgba(20, 10, 40, 0.6); border: 1px solid rgba(63, 240, 255, 0.5); border-radius: 6px; box-shadow: none; }
+    #touch { position: fixed; left: 0; right: 0; bottom: 0; display: none; justify-content: space-between; padding: 16px; pointer-events: none; }
+    #touch div { display: flex; gap: 10px; pointer-events: auto; }
+    #touch button { width: 64px; height: 64px; padding: 0; font-size: 22px; border-radius: 50%; background: rgba(20, 10, 40, 0.55); }
+    @media (pointer: coarse) { #touch { display: flex; } #speed { bottom: 100px; } }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div class="hud" id="dist"><b>0.00 km</b><div id="best"></div></div>
+  <div class="hud" id="speed"><b>0</b><span>KM/H</span><div id="boostbar"><i></i></div></div>
+  <div id="flash"></div>
+  <div id="topbar">
+    <button id="rain-btn">雨: ON</button>
+    <button id="cam-btn">カメラ</button>
+    <a href="./index.html">スタジオへ</a>
+  </div>
+  <div id="touch">
+    <div><button data-k="left">◀</button><button data-k="right">▶</button></div>
+    <div><button data-k="down">▼</button><button data-k="boost">⚡</button><button data-k="up">▲</button></div>
+  </div>
+  <div id="title">
+    <p>CYBER KNIGHT</p>
+    <h1>NEON RIDE</h1>
+    <div class="keys">← → / A D: レーン移動　↑ ↓ / W S: 加速・減速<br />SPACE: リアスラスター(ブースト)　一般車をよけて走れ</div>
+    <button id="start">START</button>
+  </div>
+
+  <script src="./cyber-knight-model.js"></script>
+  <script src="./cyber-horse-model.js"></script>
+  <!-- ステージ本体。ファイルを直接開いても(file://)動くよう、外部モジュールにせずここに埋め込む -->
+  <script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = (s) => document.querySelector(s);
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// ---------- レンダラ / シーン ----------
+const canvas = $('#view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const FOG = new THREE.Color(0x0b0420);
+scene.background = FOG;
+scene.fog = new THREE.Fog(FOG, 40, 260);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
+
+// 濡れた路面がネオンを映すよう、ピンクとシアンの光る板で環境マップを作る
+(function () {
+  const env = new THREE.Scene();
+  env.background = new THREE.Color(0x05020c);
+  const quad = (c, x, y, z, w, h, ry) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.rotation.y = ry; env.add(m);
+  };
+  for (let i = 0; i < 10; i++) {
+    const c = new THREE.Color(pick([0xff3fa4, 0x3ff0ff, 0x8a5cff, 0xffb13f])).multiplyScalar(rand(2, 5));
+    const a = (i / 10) * Math.PI * 2;
+    quad(c, Math.cos(a) * 8, rand(0, 5), Math.sin(a) * 8, rand(1, 3), rand(2, 6), -a + Math.PI / 2);
+  }
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(env, 0.02).texture;
+})();
+scene.environmentIntensity = 0.6;
+scene.add(new THREE.HemisphereLight(0x6a4cff, 0x10051a, 0.55));
+const moon = new THREE.DirectionalLight(0x9fb4ff, 0.9);
+moon.position.set(-10, 20, 10);
+scene.add(moon);
+const rimPink = new THREE.DirectionalLight(0xff3fa4, 1.4);
+rimPink.position.set(8, 4, -6);
+scene.add(rimPink);
+
+// ---------- テクスチャ ----------
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+  return t;
+}
+const NEON = ['#ff3fa4', '#3ff0ff', '#8a5cff', '#ffb13f', '#46ff9a', '#ff5a3c'];
+// ビルの窓(明かりのついた窓がまばらに並ぶ)
+const windowTex = [0, 1, 2, 3].map((v) => canvasTex(256, 512, (g, w, h) => {
+  g.fillStyle = '#07060e'; g.fillRect(0, 0, w, h);
+  const tint = ['#ffd9a0', '#9fe8ff', '#ffa0e0', '#c8b8ff'][v];
+  for (let y = 8; y < h; y += 16) for (let x = 6; x < w; x += 14) {
+    if (Math.random() < 0.38) { g.fillStyle = Math.random() < 0.15 ? pick(NEON) : tint; g.globalAlpha = rand(0.35, 1); g.fillRect(x, y, 8, 9); }
+  }
+  g.globalAlpha = 1;
+}, true));
+// 路面(車線と横断帯)
+const roadTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#0d0c14'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 3000; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+  g.fillStyle = '#ffffff';
+  [0.25, 0.5, 0.75].forEach((u) => { for (let y = 0; y < h; y += 128) g.fillRect(u * w - 3, y, 6, 64); });
+  g.fillStyle = '#3ff0ff'; g.fillRect(8, 0, 6, h); g.fillRect(w - 14, 0, 6, h);
+}, true);
+// ネオン看板(文字)
+const SIGNS = ['ラーメン', '騎士団', 'CYBER', 'NEON', '天馬', 'カラオケ', 'BAR', '酒場', 'HOTEL', '24H', '電脳', 'ARCADE', '星屑', 'KNIGHT', '夜光', 'SAMURAI'];
+const signTex = SIGNS.map((word) => {
+  const vertical = /[^\x00-\x7F]/.test(word) && Math.random() < 0.7;
+  const col = pick(NEON);
+  const tex = canvasTex(vertical ? 128 : 512, vertical ? 512 : 160, (g, w, h) => {
+    g.fillStyle = 'rgba(8,4,16,0.9)'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = col; g.lineWidth = 6; g.shadowColor = col; g.shadowBlur = 18; g.strokeRect(8, 8, w - 16, h - 16);
+    g.fillStyle = '#ffffff'; g.shadowBlur = 24; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (vertical) {
+      g.font = 'bold 84px sans-serif';
+      [...word].forEach((ch, i, a) => g.fillText(ch, w / 2, h / 2 + (i - (a.length - 1) / 2) * 96));
+    } else {
+      g.font = `bold ${Math.min(110, 780 / word.length)}px sans-serif`;
+      g.fillText(word, w / 2, h / 2 + 4);
+    }
+  });
+  return { tex, vertical, color: new THREE.Color(col) };
+});
+
+// ---------- 道路 ----------
+const ROAD_W = 16, LANES = [-6, -2, 2, 6], CHUNK = 48, NCHUNK = 7;
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, CHUNK * NCHUNK), new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.18, metalness: 0.55 }));
+road.rotation.x = -Math.PI / 2;
+road.position.z = -CHUNK * NCHUNK / 2 + 20;
+roadTex.repeat.set(1, (CHUNK * NCHUNK) / 16);
+scene.add(road);
+[-1, 1].forEach((s) => {
+  const walk = new THREE.Mesh(new THREE.BoxGeometry(6, 0.3, CHUNK * NCHUNK), new THREE.MeshStandardMaterial({ color: 0x15121f, roughness: 0.5, metalness: 0.3 }));
+  walk.position.set(s * (ROAD_W / 2 + 3), 0.15, road.position.z);
+  scene.add(walk);
+  const curb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, CHUNK * NCHUNK), new THREE.MeshBasicMaterial({ color: s > 0 ? 0xff3fa4 : 0x3ff0ff, toneMapped: false }));
+  curb.material.color.multiplyScalar(3);
+  curb.position.set(s * (ROAD_W / 2 + 0.05), 0.32, road.position.z);
+  scene.add(curb);
+});
+
+// ---------- 街並みのチャンク(流れていき、奥へ回して使い回す) ----------
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const planeGeo = new THREE.PlaneGeometry(1, 1);
+const neonMats = NEON.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c, toneMapped: false }); m.color.multiplyScalar(3.5); return m; });
+const chunks = [];
+function buildChunk(ch) {
+  while (ch.children.length) ch.remove(ch.children[0]);
+  [-1, 1].forEach((s) => {
+    let z = CHUNK / 2;
+    while (z > -CHUNK / 2) {
+      const depth = rand(8, 16), w = rand(8, 14), h = rand(14, 70);
+      const x = s * (ROAD_W / 2 + 6 + w / 2 + rand(0, 3));
+      const tex = pick(windowTex).clone();
+      tex.repeat.set(Math.max(1, Math.round(depth / 8)), Math.max(1, Math.round(h / 16)));
+      tex.needsUpdate = true;
+      const b = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0x18142a, map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.6, metalness: 0.4 }));
+      b.scale.set(w, h, depth);
+      b.position.set(x, h / 2, z - depth / 2);
+      ch.add(b);
+      // 屋上と角のネオン管
+      const nm = pick(neonMats);
+      const edge = new THREE.Mesh(boxGeo, nm);
+      edge.scale.set(0.25, h, 0.25);
+      edge.position.set(x - s * w / 2, h / 2, z - 0.2);
+      ch.add(edge);
+      const roof = new THREE.Mesh(boxGeo, nm);
+      roof.scale.set(w, 0.3, 0.3);
+      roof.position.set(x, h, z - 0.2);
+      ch.add(roof);
+      // 道路側の看板
+      if (Math.random() < 0.8) {
+        const sg = pick(signTex);
+        const sm = new THREE.MeshBasicMaterial({ map: sg.tex, toneMapped: false, transparent: true });
+        sm.color.setScalar(1.5);
+        const sign = new THREE.Mesh(planeGeo, sm);
+        const sw = sg.vertical ? 2.2 : 7, sh = sg.vertical ? 8.8 : 2.2;
+        sign.scale.set(sw, sh, 1);
+        sign.rotation.y = -s * Math.PI / 2;
+        sign.position.set(x - s * (w / 2 + 0.4), rand(5, Math.max(6, h - 6)), z - depth / 2 + rand(-depth / 3, depth / 3));
+        ch.add(sign);
+      }
+      z -= depth + rand(0.5, 3);
+    }
+    // 街灯
+    for (let i = 0; i < 2; i++) {
+      const z0 = CHUNK / 2 - i * CHUNK / 2 - 6;
+      const pole = new THREE.Mesh(boxGeo, poleMat);
+      pole.scale.set(0.25, 9, 0.25);
+      pole.position.set(s * (ROAD_W / 2 + 1.2), 4.5, z0);
+      ch.add(pole);
+      const arm = new THREE.Mesh(boxGeo, poleMat);
+      arm.scale.set(3.2, 0.2, 0.2);
+      arm.position.set(s * (ROAD_W / 2 - 0.3), 9, z0);
+      ch.add(arm);
+      const lamp = new THREE.Mesh(boxGeo, s > 0 ? neonMats[0] : neonMats[1]);
+      lamp.scale.set(1.6, 0.15, 0.5);
+      lamp.position.set(s * (ROAD_W / 2 - 1.4), 8.85, z0);
+      ch.add(lamp);
+    }
+  });
+  // ときどきネオンのゲート
+  if (Math.random() < 0.45) {
+    const nm = pick(neonMats);
+    [-1, 1].forEach((s) => {
+      const p = new THREE.Mesh(boxGeo, poleMat);
+      p.scale.set(0.8, 12, 0.8); p.position.set(s * (ROAD_W / 2 + 0.8), 6, 0);
+      ch.add(p);
+      const n = new THREE.Mesh(boxGeo, nm);
+      n.scale.set(0.15, 11, 0.15); n.position.set(s * (ROAD_W / 2 + 0.3), 6, 0.45);
+      ch.add(n);
+    });
+    const beam = new THREE.Mesh(boxGeo, poleMat);
+    beam.scale.set(ROAD_W + 3, 1.6, 0.8); beam.position.set(0, 12.4, 0);
+    ch.add(beam);
+    const sm = new THREE.MeshBasicMaterial({ map: gateTex, toneMapped: false, transparent: true });
+    sm.color.setScalar(2.4);
+    const banner = new THREE.Mesh(planeGeo, sm);
+    banner.scale.set(ROAD_W, 1.4, 1); banner.position.set(0, 12.4, 0.45);
+    ch.add(banner);
+  }
+}
+const poleMat = new THREE.MeshStandardMaterial({ color: 0x1c1a26, roughness: 0.4, metalness: 0.8 });
+const gateTex = canvasTex(1024, 96, (g, w, h) => {
+  g.fillStyle = 'rgba(5,2,12,0.85)'; g.fillRect(0, 0, w, h);
+  g.font = 'bold 64px Orbitron, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = '#ff3fa4'; g.shadowBlur = 20; g.fillStyle = '#ffffff';
+  g.fillText('CYBER KNIGHT  ◆  NEON DISTRICT', w / 2, h / 2 + 4);
+});
+for (let i = 0; i < NCHUNK; i++) {
+  const ch = new THREE.Group();
+  ch.position.z = -i * CHUNK + CHUNK / 2;
+  buildChunk(ch);
+  scene.add(ch);
+  chunks.push(ch);
+}
+
+// ---------- 雨・スピード線 ----------
+const RAIN = 1400;
+const rainGeo = new THREE.BufferGeometry();
+const rainPos = new Float32Array(RAIN * 6);
+for (let i = 0; i < RAIN; i++) {
+  const x = rand(-30, 30), y = rand(0, 30), z = rand(-120, 20);
+  rainPos.set([x, y, z, x, y - 0.6, z + 0.4], i * 6);
+}
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0x9fb8ff, transparent: true, opacity: 0.35 }));
+scene.add(rain);
+
+// ---------- 一般車(ホバーカー) ----------
+const carBodyGeo = new THREE.BoxGeometry(2.0, 0.9, 4.4);
+const carTopGeo = new THREE.BoxGeometry(1.6, 0.6, 2.2);
+const cars = [];
+function makeCar() {
+  const g = new THREE.Group();
+  const col = pick([0x2a2f45, 0x3a1838, 0x1c3440, 0x3a3a3a, 0x40281a]);
+  const bodyM = new THREE.MeshStandardMaterial({ color: col, roughness: 0.25, metalness: 0.8 });
+  const b = new THREE.Mesh(carBodyGeo, bodyM); b.position.y = 0.95; g.add(b);
+  const t = new THREE.Mesh(carTopGeo, new THREE.MeshStandardMaterial({ color: 0x0a0c14, roughness: 0.05, metalness: 0.9 })); t.position.set(0, 1.65, 0.2); g.add(t);
+  const tail = new THREE.Mesh(boxGeo, neonMats[5]); tail.scale.set(1.8, 0.15, 0.1); tail.position.set(0, 1.1, 2.22); g.add(tail);
+  const under = new THREE.Mesh(boxGeo, pick(neonMats)); under.scale.set(1.8, 0.05, 4.0); under.position.y = 0.42; g.add(under);
+  const head = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })); head.scale.set(1.6, 0.1, 0.1); head.position.set(0, 1.0, -2.22); g.add(head);
+  scene.add(g);
+  return g;
+}
+function spawnCar(z) {
+  const c = cars.find((c) => !c.active) || (cars.push({ mesh: makeCar() }), cars[cars.length - 1]);
+  c.active = true;
+  c.lane = Math.floor(Math.random() * LANES.length);
+  c.x = LANES[c.lane];
+  c.z = z;
+  c.v = rand(14, 30);
+  c.mesh.visible = true;
+  c.mesh.position.set(c.x, 0, c.z);
+}
+
+// ---------- サイバーナイト + サイバーホース ----------
+const world = new THREE.Group();
+world.scale.setScalar(1 / 2.4);  // モデルはセリナと同じ縮尺。ステージはメートル
+world.rotation.y = Math.PI;       // 奥(-Z)へ向かって走る
+scene.add(world);
+const K = window.CyberKnightModel.create(THREE, world, { glowIntensity: 0.9 });
+const H = window.CyberHorseModel.create(THREE, world, { glowIntensity: 0.9 });
+H.setStand(0);
+K.ride(H);
+K.setLook(false);
+const headlight = new THREE.SpotLight(0xd8f4ff, 60, 70, 0.5, 0.6, 1.4);
+headlight.position.set(0, 1.4, -1.2);
+const hlTarget = new THREE.Object3D(); hlTarget.position.set(0, 0, -30);
+scene.add(headlight, hlTarget);
+headlight.target = hlTarget;
+
+// ---------- 入力 ----------
+const keys = {};
+addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', (e) => (keys[e.code] = false));
+const touch = {};
+document.querySelectorAll('#touch button').forEach((b) => {
+  const k = b.dataset.k;
+  b.addEventListener('pointerdown', (e) => { touch[k] = true; e.preventDefault(); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, () => (touch[k] = false)));
+});
+const input = () => ({
+  left: keys.ArrowLeft || keys.KeyA || touch.left,
+  right: keys.ArrowRight || keys.KeyD || touch.right,
+  up: keys.ArrowUp || keys.KeyW || touch.up,
+  down: keys.ArrowDown || keys.KeyS || touch.down,
+  boost: keys.Space || keys.ShiftLeft || touch.boost,
+});
+
+let rainOn = true;
+$('#rain-btn').addEventListener('click', () => { rainOn = !rainOn; rain.visible = rainOn; $('#rain-btn').textContent = `雨: ${rainOn ? 'ON' : 'OFF'}`; });
+let camMode = 0;
+$('#cam-btn').addEventListener('click', () => (camMode = (camMode + 1) % 3));
+
+// ---------- 状態 ----------
+const S = { running: false, x: 2, vx: 0, speed: 0, dist: 0, boost: 1, boosting: false, crash: 0, steer: 0, shake: 0 };
+let best = 0;
+try { best = Number(localStorage.getItem('neonride-best')) || 0; } catch (e) { /* 保存できない環境 */ }
+const showBest = () => ($('#best').textContent = best ? `BEST ${best.toFixed(2)} km` : '');
+showBest();
+$('#start').addEventListener('click', () => {
+  $('#title').style.display = 'none';
+  Object.assign(S, { running: true, speed: 18, dist: 0, crash: 0, boost: 1 });
+  cars.forEach((c) => { c.active = false; c.mesh.visible = false; });
+  for (let i = 0; i < 6; i++) spawnCar(-60 - i * 35);
+});
+
+// ---------- ポストエフェクト ----------
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.45, 0.9);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- ループ ----------
+const clock = new THREE.Clock();
+let t = 0;
+const camPos = new THREE.Vector3(2, 3, 7), look = new THREE.Vector3();
+function step(dt) {
+  t += dt;
+  const I = S.running ? input() : {};
+  const MAX = 62, BOOST_MAX = 88;
+  // 速度: 加速・減速・ブースト
+  S.boosting = !!(I.boost && S.boost > 0.02 && S.running);
+  const target = !S.running ? 14 : S.boosting ? BOOST_MAX : I.up ? MAX : I.down ? 10 : 36;
+  S.speed += (target - S.speed) * Math.min(1, dt * (S.boosting ? 1.6 : I.down ? 2.2 : 0.7));
+  S.boost = Math.max(0, Math.min(1, S.boost + (S.boosting ? -dt * 0.35 : dt * 0.12)));
+  if (S.crash > 0) { S.crash -= dt; S.speed = Math.min(S.speed, 14); }
+  // 左右移動(レーンに吸い付かない自由な移動)
+  const want = (I.right ? 1 : 0) - (I.left ? 1 : 0);
+  S.vx += (want * 11 - S.vx) * Math.min(1, dt * 5);
+  if (!S.running) S.vx = (LANES[2] - S.x) * 1.5;
+  S.x = Math.max(-ROAD_W / 2 + 1.2, Math.min(ROAD_W / 2 - 1.2, S.x + S.vx * dt));
+  const move = S.speed * dt;
+  if (S.running) S.dist += move / 1000;
+
+  // 街並み・路面・雨を手前へ流す
+  roadTex.offset.y = (roadTex.offset.y + move / 16) % 1;
+  chunks.forEach((ch) => {
+    ch.position.z += move;
+    if (ch.position.z > CHUNK * 1.5) { ch.position.z -= CHUNK * NCHUNK; buildChunk(ch); }
+  });
+  const rp = rainGeo.attributes.position.array;
+  for (let i = 0; i < RAIN; i++) {
+    const o = i * 6;
+    let y = rp[o + 1] - dt * 26, z = rp[o + 2] + move;
+    if (y < 0 || z > 25) { y = rand(10, 30); z = rand(-120, 0); rp[o] = rand(-30, 30); rp[o + 3] = rp[o]; }
+    rp[o + 1] = y; rp[o + 2] = z; rp[o + 4] = y - 0.6 - S.speed * 0.012; rp[o + 5] = z + 0.4 + S.speed * 0.03;
+  }
+  rainGeo.attributes.position.needsUpdate = true;
+
+  // 一般車
+  let active = 0;
+  cars.forEach((c) => {
+    if (!c.active) return;
+    active++;
+    c.z += move - c.v * dt;
+    c.mesh.position.set(c.x, 0.15 * Math.sin(t * 3 + c.z), c.z);
+    if (c.z > 30 || c.z < -320) { c.active = false; c.mesh.visible = false; }
+    // 衝突
+    if (S.running && S.crash <= 0 && Math.abs(c.z) < 2.8 && Math.abs(c.x - S.x) < 1.6) {
+      S.crash = 1.2; S.shake = 0.6; S.speed *= 0.3; S.vx = Math.sign(S.x - c.x || 1) * 9;
+      c.v += 10;
+      $('#flash').style.opacity = 1; setTimeout(() => ($('#flash').style.opacity = 0), 160);
+    }
+  });
+  if (S.running && active < 7 + Math.floor(S.dist * 2)) spawnCar(-rand(220, 300));
+
+  // バイクと乗り手
+  world.position.x = S.x;
+  S.steer += (-S.vx * 0.035 - S.steer) * Math.min(1, dt * 8);
+  H.setSteer(S.steer);
+  H.setLean(S.steer * 1.4 + (S.crash > 0 ? Math.sin(t * 30) * 0.1 : 0));
+  H.setBoost(S.boosting ? 1 : 0.15 + S.speed / 300);
+  H.update(dt, S.speed * 2.4);
+  K.setWind(Math.min(22, S.speed * 0.35));
+  K.update(dt, t, camera);
+  headlight.position.set(S.x, 1.6, -1.4);
+  hlTarget.position.set(S.x - S.steer * 8, 0, -30);
+
+  // カメラ(追いかけ・横・低め)
+  const sp = S.speed / BOOST_MAX;
+  const offs = [[0, 2.0 + sp * 0.3, 5.0 - sp * 0.8], [5.0, 1.5, 2.2], [0.4, 0.7, 3.8]][camMode];
+  camPos.lerp(new THREE.Vector3(S.x * 0.85 + offs[0], offs[1], offs[2]), Math.min(1, dt * 4));
+  camera.position.copy(camPos);
+  S.shake = Math.max(0, S.shake - dt);
+  const sh = S.shake + (S.boosting ? 0.04 : 0);
+  camera.position.x += (Math.random() - 0.5) * sh * 0.4;
+  camera.position.y += (Math.random() - 0.5) * sh * 0.3;
+  look.set(S.x, 1.1, -10);
+  camera.lookAt(look);
+  camera.rotation.z += S.steer * 0.25;
+  camera.fov += (62 + sp * 26 - camera.fov) * Math.min(1, dt * 3);
+  camera.updateProjectionMatrix();
+  bloom.strength = 0.7 + (S.boosting ? 0.2 : 0);
+
+  // HUD
+  $('#speed b').textContent = Math.round(S.speed * 3.6);
+  $('#dist b').textContent = `${S.dist.toFixed(2)} km`;
+  $('#boostbar i').style.width = `${S.boost * 100}%`;
+  if (S.dist > best && S.running) {
+    best = S.dist;
+    if (Math.floor(t) !== Math.floor(t - dt)) { try { localStorage.setItem('neonride-best', best.toFixed(3)); } catch (e) { /* 保存できない環境 */ } showBest(); }
+  }
+}
+function frame() {
+  const dt = Math.min(clock.getDelta(), 1 / 20);
+  if (!window.__stage?.paused) step(dt);
+  composer.render();
+  requestAnimationFrame(frame);
+}
+frame();
+window.__stage = { S, K, H, camera, step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) step(dt); }, keys, start: () => $('#start').click() };
+  </script>
+</body>
+</html>
