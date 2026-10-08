@@ -6,13 +6,10 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 
 ## 動かし方
 
-ES モジュールを使うビューアがあるので、ローカルサーバー経由で開いてください。Three.js は CDN から読み込みます。
+`index.html` をブラウザで開くとスタジオが表示されます(ファイルを直接開いても、ローカルサーバー経由でも動きます)。Three.js は CDN から読み込むので、インターネット接続が必要です。
 
-```sh
-npx http-server . -p 8080
-# → http://localhost:8080          スタジオ(r170・ブルーム・操作パネル)
-# → http://localhost:8080/examples/r128.html   r128 への組み込み例
-```
+- `index.html`: スタジオ(r170・ブルーム・操作パネル)
+- `examples/r128.html`: r128 への組み込み例
 
 ## 組み込み方
 
@@ -78,5 +75,5 @@ npx http-server . -p 8080
 | ファイル | 内容 |
 | --- | --- |
 | `cyber-knight-model.js` | モデル本体(形状・リグ・IK・モーション・物理・API) |
-| `index.html` / `src/viewer.js` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
+| `index.html` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
 | `examples/r128.html` | r128 への組み込み例 |
