@@ -108,6 +108,8 @@
     <label class="tg"><input type="checkbox" data-toggle="ik" checked /> 脚 IK(足を接地させる)</label>
     <label class="tg"><input type="checkbox" data-toggle="physics" checked /> マント・羽飾りの物理</label>
     <label class="tg"><input type="checkbox" data-toggle="look" checked /> カメラ目線</label>
+    <label class="tg"><input type="checkbox" data-toggle="pulse" checked /> 発光の点滅</label>
+    <label class="tg"><input type="checkbox" data-toggle="pulse" checked /> 発光の点滅</label>
     <label class="tg"><input type="checkbox" data-toggle="spin" /> カメラ自動回転</label>
   </div>
 
@@ -289,6 +291,8 @@ const toggles = {
   ik: (on) => { K.setIK(on); syncEditor(true); },
   physics: (on) => K.setPhysics(on),
   look: (on) => K.setLook(on),
+  pulse: (on) => K.setGlowPulse(on),
+  pulse: (on) => K.setGlowPulse(on),
   spin: (on) => (controls.autoRotate = on),
 };
 document.querySelectorAll('[data-toggle]').forEach((el) => el.addEventListener('change', () => toggles[el.dataset.toggle](el.checked)));

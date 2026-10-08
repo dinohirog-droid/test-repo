@@ -331,8 +331,22 @@
           hips.add(t);
           add(t, extrude(polyShape(tab), 0.008, 0.002), M.tabard);
           add(t, extrude(rim, 0.012, 0.002), M.gold);
-          const em = polyShape([[0, -0.11], [0.035, -0.17], [0.012, -0.16], [0.012, -0.29], [-0.012, -0.29], [-0.012, -0.16], [-0.035, -0.17]]);
-          add(t, extrude(em, 0.006, 0.002), M.emblem, [0, 0, d[2] * 0.008]);
+          // 紋章: 金縁の小盾 + クロスパテ + 小さな王冠
+          const crest = new THREE.Group();
+          crest.position.set(0, -0.19, d[2] * 0.006);
+          if (d[2] < 0) crest.rotation.y = Math.PI;
+          t.add(crest);
+          add(crest, extrude(heater(0.115, 0.15), 0.004, 0.0015), M.gold);
+          add(crest, extrude(heater(0.115, 0.15, 0.011), 0.004, 0.001), M.paint, [0, 0, 0.002]);
+          const a = 0.0065, c = 0.017, h = 0.042;
+          const pattee = polyShape([
+            [-a, a], [-c, h], [c, h], [a, a], [h, c], [h, -c], [a, -a], [c, -h],
+            [-c, -h], [-a, -a], [-h, -c], [-h, c],
+          ]);
+          add(crest, extrude(pattee, 0.004, 0.0015), M.emblem, [0, -0.004, 0.005]);
+          add(crest, sphere(0.007, 12, 8), M.glow, [0, -0.004, 0.008], 0, [1, 1, 0.5]);
+          const crown = polyShape([[-0.03, 0], [0.03, 0], [0.034, 0.03], [0.017, 0.016], [0, 0.036], [-0.017, 0.016], [-0.034, 0.03]]);
+          add(crest, extrude(crown, 0.004, 0.0015), M.gold, [0, 0.07, 0.002]);
           ex[d[0]] = t;
         });
 
@@ -386,6 +400,41 @@
         const ridge = [];
         for (let i = 0; i <= 8; i++) { const y = 0.09 + i * 0.019; ridge.push([0, y + vy, (radiusAt(prof, y) + 0.011) * SZ]); }
         add(visor, surfaceLine(ridge, 0.008), M.gold);
+
+        // 兜をシャープに: 丸い回転体を、小さく・細く・前へ尖る形に変形する(頭部空間で全パーツ一括)
+        const sharpen = (p) => {
+          p.y = 0.02 + (p.y - 0.02) * 0.92;
+          if (p.y > 0.2) p.y = 0.2 + (p.y - 0.2) * 0.85; // 頭頂を低く(丸すぎないように)
+          p.x *= 0.84; p.z *= 0.95;
+          const front = clamp(1 - Math.abs(p.x) / 0.12, 0, 1);
+          if (p.z > 0) {
+            const band = Math.exp(-Math.pow((p.y - 0.15) / 0.09, 2));
+            p.z += 0.05 * front * band; // 中央が前へ出る V 字のフェイスガード
+            if (p.y < 0.1) p.z += (0.1 - p.y) * 0.35 * front; // 顎を前へ尖らせる
+          }
+          if (p.y < 0.1) p.x *= 1 - (0.1 - p.y) * 1.6; // 顎を細く
+          if (p.y > 0.24) p.y += 0.022 * clamp(1 - Math.abs(p.x) / 0.1, 0, 1) * (p.y - 0.24) / 0.08; // 頭頂の稜線
+          return p;
+        };
+        root.updateMatrixWorld(true);
+        const toHead = new THREE.Matrix4().copy(head.matrixWorld).invert();
+        const meshes = [];
+        head.traverse((o) => { if (o.isMesh && markers.indexOf(o) < 0) meshes.push(o); });
+        const mm = new THREE.Matrix4(), mi = new THREE.Matrix4(), v = V3(0, 0, 0);
+        meshes.forEach((o) => {
+          mm.multiplyMatrices(toHead, o.matrixWorld);
+          mi.copy(mm).invert();
+          const g = o.geometry = o.geometry.clone(); // カプセルなど共有形状を壊さないよう複製
+          const pa = g.attributes.position;
+          for (let i = 0; i < pa.count; i++) {
+            v.fromBufferAttribute(pa, i).applyMatrix4(mm);
+            sharpen(v).applyMatrix4(mi);
+            pa.setXYZ(i, v.x, v.y, v.z);
+          }
+          g.computeVertexNormals();
+          g.computeBoundingSphere();
+        });
+        sharpen(ex.plumeBase);
       })();
 
       /* ========================================================
@@ -858,7 +907,7 @@
       /* ========================================================
          12. 状態・IK・適用
          ======================================================== */
-      const state = { ik: options.ik !== false, physics: options.physics !== false, look: options.look !== false };
+      const state = { ik: options.ik !== false, physics: options.physics !== false, look: options.look !== false, pulse: options.glowPulse !== false };
       const equip = { sword: options.sword !== false, shield: options.shield !== false };
       const handOverride = { L: null, R: null };
       let currentMode = options.mode || 'idle', mt = 0;
@@ -1214,7 +1263,7 @@
         cape.update(dt);
         plume.update(dt);
         trail.update(cur.trail, time);
-        const pulse = Math.sin(time * 2.2);
+        const pulse = state.pulse ? Math.sin(time * 2.2) : 0; // 発光の点滅(ゆっくり明滅)
         M.glow.emissiveIntensity = (7.5 + pulse * 1.5) * gk;
         M.glowSoft.emissiveIntensity = (3 + pulse * 0.6) * gk;
       }
@@ -1270,6 +1319,8 @@
         setIK: (on) => { state.ik = !!on; },
         setPhysics: (on) => { state.physics = !!on; },
         setLook: (on) => { state.look = !!on; },
+        setGlowPulse: (on) => { state.pulse = !!on; },
+        setGlowPulse: (on) => { state.pulse = !!on; },
         getState: () => Object.assign({}, state),
         editJoint, editRoot,
         getPose: () => clonePose(cur),

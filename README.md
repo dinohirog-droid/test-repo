@@ -36,6 +36,8 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `mode` | `'idle'` | 開始時のモーション |
 | `outline` / `outlineWidth` | `true` / `0.005` | 輪郭線 |
 | `ik` / `physics` / `look` | `true` | 脚 IK / マントと羽飾りの物理 / カメラ目線 |
+| `glowPulse` | `true` | 発光パーツのゆっくりした点滅 |
+| `glowPulse` | `true` | 発光パーツのゆっくりした点滅 |
 | `sword` / `shield` | `true` | 武装 |
 | `shieldClearance` | `0.055` | 盾の裏面から取っ手までの距離(m) |
 | `glowIntensity` | `1` | 発光の強さの倍率 |
@@ -51,7 +53,7 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `setEquip({ sword, shield })` | 武装の着脱 |
 | `setShieldClearance(m)` | 盾と拳の間隔 |
 | `setOutline(on, width)` | 輪郭線 |
-| `setIK(on)` / `setPhysics(on)` / `setLook(on)` | 各機能の切り替え |
+| `setIK(on)` / `setPhysics(on)` / `setLook(on)` / `setGlowPulse(on)` | 各機能の切り替え |
 | `editJoint(name, axis, deg)` / `editRoot(axis, m)` | 関節エディタ用。その時点のポーズを保持して編集する(`hold` モード) |
 | `getPose()` / `setExternalPose(P)` / `applyPose(P)` | ポーズの取得と外部からの駆動(乗車など) |
 | `resetPhysics()` | マントと羽飾りを今の姿勢で落ち着かせる |
