@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cyber Knight</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: rgba(12, 20, 36, 0.78);
+      --line: rgba(110, 180, 255, 0.22);
+      --text: #dbe6f5;
+      --dim: #8a9bb6;
+      --accent: #3aa8ff;
+      --hot: #ffa53a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 13px; }
+    #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .panel { position: fixed; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+      padding: 14px 16px; backdrop-filter: blur(8px); width: 260px; max-height: calc(100% - 32px); overflow: auto; }
+    #left { left: 16px; }
+    #right { right: 16px; }
+    h1 { font-family: Orbitron, sans-serif; font-size: 22px; letter-spacing: 0.08em; margin: 0; color: #eaf3ff; }
+    .sub { color: var(--accent); margin: 2px 0 10px; letter-spacing: 0.1em; }
+    h2 { font-size: 12px; color: var(--dim); font-weight: 600; margin: 14px 0 6px; letter-spacing: 0.05em; }
+    h2::before { content: "■ "; color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    button { font: inherit; color: var(--text); background: rgba(40, 70, 120, 0.35); border: 1px solid var(--line);
+      border-radius: 6px; padding: 7px 8px; cursor: pointer; transition: background .15s, border-color .15s; }
+    button:hover { background: rgba(58, 168, 255, 0.25); border-color: var(--accent); }
+    button.on { background: rgba(58, 168, 255, 0.4); border-color: var(--accent); color: #fff; }
+    button.action { border-color: rgba(58, 168, 255, 0.55); }
+    #variants button { display: flex; align-items: center; gap: 6px; }
+    #variants button::before { content: ""; width: 12px; height: 12px; border-radius: 3px; background: var(--sw);
+      border: 1px solid rgba(255,255,255,0.3); }
+    label.tg { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+    label.tg input { accent-color: var(--accent); }
+    select { width: 100%; font: inherit; color: var(--text); background: #0d1626; border: 1px solid var(--line);
+      border-radius: 6px; padding: 6px; }
+    .ax { display: grid; grid-template-columns: 64px 1fr 36px; align-items: center; gap: 8px; margin: 8px 0; }
+    .ax span { color: var(--dim); font-size: 12px; }
+    .ax output { text-align: right; font-variant-numeric: tabular-nums; }
+    .ax input { width: 100%; accent-color: var(--hot); }
+    .note { color: var(--dim); font-size: 11.5px; line-height: 1.5; margin: 6px 0 0; }
+    #ik-note { color: var(--hot); }
+    #panel-toggle { position: fixed; bottom: 16px; right: 16px; display: none; }
+    .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 11.5px;
+      pointer-events: none; white-space: nowrap; }
+    @media (max-width: 760px) {
+      .panel { width: auto; left: 16px !important; right: 16px !important; top: auto; max-height: 38vh; }
+      #left { bottom: 16px; }
+      #right { display: none; }
+      body.collapsed #left { display: none; }
+      body.editor #left { display: none; }
+      body.editor #right { display: block; bottom: 16px; }
+      #panel-toggle { display: block; bottom: auto; top: 16px; }
+      .hint { display: none; }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <div class="panel" id="left">
+    <h1>CYBER KNIGHT</h1>
+    <div class="sub">サイバーナイト</div>
+
+    <h2>ポーズ</h2>
+    <div class="grid" id="poses"></div>
+
+    <h2>アクション</h2>
+    <div class="grid" id="actions"></div>
+
+    <h2>カラーバリエーション</h2>
+    <div class="grid" id="variants"></div>
+
+    <h2>表示・機能</h2>
+    <label class="tg"><input type="checkbox" data-toggle="markers" /> 関節マーカー(クリックで選択)</label>
+    <label class="tg"><input type="checkbox" data-toggle="ik" checked /> 脚 IK(足を接地させる)</label>
+    <label class="tg"><input type="checkbox" data-toggle="physics" checked /> マント・羽飾りの物理</label>
+    <label class="tg"><input type="checkbox" data-toggle="breath" checked /> 呼吸モーション</label>
+    <label class="tg"><input type="checkbox" data-toggle="spin" /> カメラ自動回転</label>
+  </div>
+
+  <div class="panel" id="right">
+    <h2 style="margin-top:0">関節エディタ</h2>
+    <select id="joint"></select>
+    <div class="ax" id="ax-x"><span>X</span><input type="range" /><output></output></div>
+    <div class="ax" id="ax-y"><span>Y</span><input type="range" /><output></output></div>
+    <div class="ax" id="ax-z"><span>Z</span><input type="range" /><output></output></div>
+    <p class="note" id="range"></p>
+    <p class="note" id="ik-note" hidden>脚 IK が有効なため、脚の関節は自動で計算されます。手で動かすには脚 IK をオフにしてください。</p>
+    <p style="margin-top:10px"><button id="reset-joint">この関節をリセット</button></p>
+    <p class="note">肩当て・草摺・前垂れは関節の動きに連動して動きます。</p>
+  </div>
+
+  <button id="panel-toggle">パネル</button>
+  <div class="hint">ドラッグで回転 ・ ホイールでズーム ・ 右ドラッグで移動</div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
