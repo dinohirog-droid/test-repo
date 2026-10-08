@@ -56,7 +56,7 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 | `editJoint(name, axis, deg)` / `editRoot(axis, m)` | 関節エディタ用。その時点のポーズを保持して編集する(`hold` モード) |
 | `getPose()` / `setExternalPose(P)` / `applyPose(P)` | ポーズの取得と外部からの駆動(乗車など) |
 | `resetPhysics()` | マントと羽飾りを今の姿勢で落ち着かせる |
-| `ride(bike)` / `dismount()` / `isRiding()` | バイクに乗る / 降りる。`seatMarker`・`gripTarget[±1]`・`pegMark{L,R}`・`chassis` を持つバイク(サイバーホース、LUNA)に対応 |
+| `ride(bike)` / `dismount()` / `isRiding()` | バイクに乗る / 降りる。`seatMarker`・`gripTarget[±1]`・`pegMark{L,R}`・`chassis` を持つバイク(LUNA と同じ形式の目印)に乗る。動作確認はサイバーホースのみ |
 | `setWind(v)` | 走行風。マントと羽飾りが後ろへなびく |
 
 公開プロパティ: `root`、`joints`(関節名 → Object3D)、`JOINTS`(可動域つきの関節一覧)、`CH`(UI 用チャンネル一覧)、`hands.L/R.grip`(握り点)、`sword`、`shield`、`markers`、`materials`、`poses`。
