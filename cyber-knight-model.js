@@ -517,6 +517,7 @@
       };
     },
     actions: { spin: { dur: 1.95, next: 'guard' }, charge: { dur: 1.5, next: 'guard' } },
+    jump: { height: 0.42, flip: 0, tuck: 0.55 }, // 重い甲冑なので低めに跳び、宙返りはしない
 
     // 連動パーツ: 肩アーマーは腕に、草摺・前垂れ・後ろ垂れは太ももに部分追従
     linked(ctx) {
@@ -552,7 +553,7 @@
       desc: '古の騎士の意志を継ぐ機械仕掛けの騎士。関節リグ(可動域つき)・脚IK・3節の指・拳で握る盾・連動装甲・マントと羽飾りの物理・剣の軌跡・輪郭線',
       create: 'create(THREE, parent, options) → { root, setMode, update, setColor, setHand, setEquip, setOutline, editJoint, ride, ... }',
       requires: ['humanoid-core.js'],
-      modes: ['idle', 'guard', 'block', 'visor', 'walk', 'run', 'spin', 'charge'],
+      modes: ['idle', 'guard', 'block', 'visor', 'walk', 'run', 'spin', 'charge', 'jump'],
       colors: Object.keys(COLORS),
       hands: ['grip', 'fist', 'open', 'relax'],
       height: 1.97, // scale=1 のときの全高(メートル)

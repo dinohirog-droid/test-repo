@@ -229,9 +229,229 @@
     };
   }
 
+/* ================= 顔: キャンバスに描く目 ================= */
+  // アニメ調の目の絵(表情・まばたき)。顔の曲面に貼る(spec.face)。座標は 512×232 を基準に描き、RES 倍の解像度で出す
+  const EYE_W = 512, EYE_H = 232, RES = 2;
+  const IRIS_STYLES = ['normal', 'sparkle', 'magic'];
+  const rnd = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }; // 描き直しても模様が変わらない乱数
+
+  // 上まぶたの線(目頭 -W → 目尻 +W)
+  function upperLid(g, W, H, tilt, move) {
+    if (move) g.moveTo(-W, 6 + tilt * 30);
+    g.bezierCurveTo(-W * 0.55, -H - tilt * 24, W * 0.45, -H * 1.04 + tilt * 8, W, -8 - tilt * 12);
+  }
+  function lowerLid(g, W, H, tilt) {
+    g.bezierCurveTo(W * 0.62, H * 0.86, -W * 0.45, H * 0.98, -W, 6 + tilt * 30);
+  }
+
+  // 虹彩: ステンドグラス風の模様(同心円 × 放射の区画を明暗で塗り分け)、縦長の瞳孔、下側の照り返し
+  function drawIris(g, iris, ix, iy, rx, ry, style, img) {
+    g.save();
+    g.beginPath(); g.ellipse(ix, iy, rx, ry, 0, 0, Math.PI * 2); g.clip();
+    if (img) {
+      g.drawImage(img, ix - rx, iy - ry, rx * 2, ry * 2);
+    } else {
+      const base = g.createRadialGradient(ix, iy + ry * 0.25, ry * 0.1, ix, iy, ry * 1.05);
+      base.addColorStop(0, iris[2]); base.addColorStop(0.45, iris[1]); base.addColorStop(1, iris[0]);
+      g.fillStyle = base; g.fillRect(ix - rx, iy - ry, rx * 2, ry * 2);
+      // 区画(単位円の空間で描く)
+      g.save(); g.translate(ix, iy); g.scale(rx, ry);
+      const rings = [0.32, 0.52, 0.72, 0.9], N = 14;
+      for (let r = 0; r < rings.length - 1; r++) {
+        for (let k = 0; k < N; k++) {
+          const a0 = (k / N) * Math.PI * 2 + r * 0.22, a1 = a0 + (Math.PI * 2) / N, v = rnd(r * 31 + k);
+          g.beginPath(); g.arc(0, 0, rings[r + 1], a0, a1); g.arc(0, 0, rings[r], a1, a0, true); g.closePath();
+          g.fillStyle = v > 0.5 ? `rgba(255,255,255,${(v - 0.5) * 0.36})` : `rgba(10,0,30,${(0.5 - v) * 0.34})`;
+          g.fill();
+        }
+      }
+      g.lineWidth = 0.018; g.strokeStyle = 'rgba(255,255,255,0.16)';
+      rings.forEach((r) => { g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke(); });
+      for (let k = 0; k < N; k++) { const a = (k / N) * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 0.3, Math.sin(a) * 0.3); g.lineTo(Math.cos(a), Math.sin(a)); g.stroke(); }
+      if (style === 'magic') { // 魔法陣: 光る二重円と目盛り
+        g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 0.03;
+        [0.46, 0.78].forEach((r) => { g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke(); });
+        for (let k = 0; k < 24; k++) { const a = (k / 24) * Math.PI * 2, l = k % 3 ? 0.06 : 0.12; g.beginPath(); g.moveTo(Math.cos(a) * 0.78, Math.sin(a) * 0.78); g.lineTo(Math.cos(a) * (0.78 - l), Math.sin(a) * (0.78 - l)); g.stroke(); }
+        g.beginPath(); for (let k = 0; k <= 6; k++) { const a = (k * 4 * Math.PI) / 6 - Math.PI / 2; g.lineTo(Math.cos(a) * 0.46, Math.sin(a) * 0.46); } g.stroke();
+      }
+      g.restore();
+      // 外周の濃い縁と、上まぶたの落とす影
+      g.lineWidth = 3.5; g.strokeStyle = iris[0];
+      g.beginPath(); g.ellipse(ix, iy, rx - 1.5, ry - 1.5, 0, 0, Math.PI * 2); g.stroke();
+      const sh = g.createLinearGradient(0, iy - ry, 0, iy);
+      sh.addColorStop(0, 'rgba(14,4,30,0.7)'); sh.addColorStop(1, 'rgba(14,4,30,0)');
+      g.fillStyle = sh; g.fillRect(ix - rx, iy - ry, rx * 2, ry);
+      // 下側の照り返し(弧状の明るい帯)
+      g.globalCompositeOperation = 'lighter';
+      const gl = g.createRadialGradient(ix, iy + ry * 0.75, 2, ix, iy + ry * 0.75, ry * 0.75);
+      gl.addColorStop(0, iris[2]); gl.addColorStop(1, 'rgba(0,0,0,0)');
+      g.globalAlpha = 0.55; g.fillStyle = gl; g.fillRect(ix - rx, iy, rx * 2, ry);
+      g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      // 瞳孔(縦長)と、そのまわりの明るい輪
+      g.fillStyle = '#100822';
+      g.beginPath(); g.ellipse(ix, iy + 2, rx * 0.22, ry * 0.36, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = iris[2]; g.globalAlpha = 0.45; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(ix, iy + 2, rx * 0.3, ry * 0.44, 0, 0, Math.PI * 2); g.stroke();
+      g.globalAlpha = 1;
+    }
+    g.restore();
+  }
+
+  // 光: 大きな白い照り(左上)・小さな丸(右下)・粒。side をかけて両目とも同じ側に光が来るようにする
+  function drawHighlights(g, side, ix, iy, rx, ry, style) {
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.ellipse(ix - 0.36 * rx * side, iy - ry * 0.42, rx * 0.3, ry * 0.24, -0.5 * side, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(ix + 0.4 * rx * side, iy + ry * 0.42, rx * 0.12, rx * 0.12, 0, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 0.85;
+    g.beginPath(); g.ellipse(ix + 0.08 * rx * side, iy - ry * 0.1, 2.6, 2.6, 0, 0, Math.PI * 2); g.fill();
+    if (style === 'sparkle') { // 星のきらめき
+      for (let k = 0; k < 7; k++) {
+        const x = ix + (rnd(k + 70) - 0.5) * rx * 1.4, y = iy + (rnd(k + 90) - 0.3) * ry * 1.2, s = 2 + rnd(k + 50) * 4;
+        g.beginPath(); g.moveTo(x, y - s); g.quadraticCurveTo(x, y, x + s, y); g.quadraticCurveTo(x, y, x, y + s); g.quadraticCurveTo(x, y, x - s, y); g.quadraticCurveTo(x, y, x, y - s); g.fill();
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  // まつげ: 目尻へ向かって太くなる上まつげと、目尻のはね毛。色は黒から赤茶へ
+  function drawLashes(g, W, H, tilt) {
+    const lg = g.createLinearGradient(-W, 0, W, 0);
+    lg.addColorStop(0, '#2a1420'); lg.addColorStop(0.5, '#160a18'); lg.addColorStop(1, '#3a141e');
+    g.fillStyle = lg; g.strokeStyle = lg; g.lineCap = 'round'; g.lineJoin = 'round';
+    // 太さの変わる帯: 上まぶたの線を上にずらした線と合わせて塗る
+    g.beginPath();
+    g.moveTo(-W - 2, 6 + tilt * 30);
+    g.bezierCurveTo(-W * 0.55, -H - tilt * 24, W * 0.45, -H * 1.04 + tilt * 8, W + 4, -8 - tilt * 12);
+    g.lineTo(W + 9, -19 - tilt * 12);
+    g.bezierCurveTo(W * 0.45, -H * 1.04 - 15 + tilt * 8, -W * 0.55, -H - 9 - tilt * 24, -W - 2, 1 + tilt * 30);
+    g.closePath(); g.fill();
+    // はね毛(先細りの三角)
+    const P = (t) => { const u = 1 - t, a = [-W, 6 + tilt * 30], b = [-W * 0.55, -H - tilt * 24], c = [W * 0.45, -H * 1.04 + tilt * 8], d = [W, -8 - tilt * 12];
+      return [u * u * u * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t * t * t * d[0], u * u * u * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t * t * t * d[1]]; };
+    [[0.3, 10, -0.5], [0.45, 13, -0.3], [0.6, 15, -0.05], [0.73, 18, 0.3], [0.86, 22, 0.65], [0.98, 26, 1.0]].forEach(([t, L, a]) => {
+      const [x, y] = P(t), dx = Math.sin(a) * L, dy = -Math.cos(a) * L;
+      g.beginPath(); g.moveTo(x - 3.5, y - 3); g.quadraticCurveTo(x + dx * 0.4, y + dy * 0.7, x + dx, y + dy); g.quadraticCurveTo(x + dx * 0.6, y + dy * 0.4, x + 3.5, y - 3); g.fill();
+    });
+    // 目尻の下へのはね
+    g.lineWidth = 4; g.beginPath(); g.moveTo(W + 4, -10 - tilt * 12); g.quadraticCurveTo(W + 10, 4, W + 6, 14); g.stroke();
+    // 二重まぶたの線
+    g.strokeStyle = 'rgba(150,70,86,0.55)'; g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(-W * 0.55, -H - 12 - tilt * 20); g.bezierCurveTo(-W * 0.2, -H - 24 - tilt * 14, W * 0.4, -H - 22 + tilt * 6, W * 0.85, -H * 0.55 - 14 - tilt * 10); g.stroke();
+    // 下まつげ(赤茶の細線と短い毛)
+    g.strokeStyle = 'rgba(110,40,56,0.85)'; g.lineWidth = 2.4;
+    g.beginPath(); g.moveTo(-W * 0.3, H * 0.97); g.quadraticCurveTo(W * 0.3, H * 1.02, W * 0.86, H * 0.55); g.stroke();
+    g.lineWidth = 1.8;
+    [0.1, 0.4, 0.66].forEach((t) => { const x = -W * 0.3 + t * W * 1.16, y = H * (0.99 - t * t * 0.4); g.beginPath(); g.moveTo(x, y); g.lineTo(x + 3, y + 7); g.stroke(); });
+  }
+
+  // opt = { style: 虹彩の模様, images: { iris, full } }(読み込み済みの画像)
+  function drawEyes(g, iris, expr, open, opt) {
+    opt = opt || {};
+    const imgs = opt.images || {};
+    g.setTransform(RES, 0, 0, RES, 0, 0);
+    g.clearRect(0, 0, EYE_W, EYE_H);
+    // 画像を丸ごと貼る場合(表情ごとの両目の絵)。まばたきは縦につぶして表現する
+    const full = imgs.full && (open < 0.12 ? imgs.full.closed : imgs.full[expr]);
+    if (full) {
+      const h = EYE_H * (open < 0.12 ? 1 : Math.max(open, 0.1));
+      g.drawImage(full, 0, (EYE_H - h) / 2, EYE_W, h);
+      return;
+    }
+    [-1, 1].forEach((side) => {
+      const cx = 256 + side * 128, cy = 122;
+      g.save();
+      g.translate(cx, cy);
+      g.scale(side, 1); // 片目は鏡像(目頭が中央側)
+      const ex = expr;
+      // 上まぶたの傾き: 怒りは目頭が下がる、悲しみは目頭が上がる
+      const tilt = ex === 'angry' ? 0.28 : ex === 'sad' ? -0.22 : 0.06;
+      const op = ex === 'surprise' ? 1.16 : ex === 'angry' ? 0.74 : ex === 'sad' ? 0.84 : 1;
+      // まぶたのまわりの淡い紅(アイシャドウ)
+      const sh = g.createRadialGradient(4, -18, 10, 4, -10, 90);
+      sh.addColorStop(0, 'rgba(214,120,140,0.28)'); sh.addColorStop(1, 'rgba(214,120,140,0)');
+      g.fillStyle = sh; g.fillRect(-100, -95, 200, 150);
+      g.strokeStyle = '#2a1420'; g.fillStyle = '#2a1420'; g.lineCap = 'round';
+      if (ex === 'smile' || open < 0.12) {
+        // 閉じた目 / 笑い目(弧)。まつげのはねは残す
+        g.lineWidth = 8;
+        g.beginPath();
+        if (ex === 'smile') g.arc(0, 18, 48, Math.PI * 1.13, Math.PI * 1.87); else g.arc(0, -14, 54, Math.PI * 0.2, Math.PI * 0.8);
+        g.stroke();
+        const ox = ex === 'smile' ? 44 : 34, oy = ex === 'smile' ? -2 : 26;
+        g.lineWidth = 3.5;
+        [[10, -12], [16, -4]].forEach(([dx, dy]) => { g.beginPath(); g.moveTo(ox, oy); g.lineTo(ox + dx, oy + (ex === 'smile' ? dy : -dy * 0.4)); g.stroke(); });
+        g.restore();
+        return;
+      }
+      const H = 64 * op * open, W = 74;
+      // 白目(上まぶたの影で上側をくすませる)
+      g.save();
+      g.beginPath(); upperLid(g, W, H, tilt, true); lowerLid(g, W, H, tilt); g.closePath();
+      const wg = g.createLinearGradient(0, -H, 0, H * 0.4);
+      wg.addColorStop(0, '#c9b9d2'); wg.addColorStop(0.45, '#f4eef8'); wg.addColorStop(1, '#fdfbff');
+      g.fillStyle = wg; g.fill();
+      g.clip();
+      const ir = ex === 'surprise' ? 43 : 51, ix = 5, iy = 7;
+      drawIris(g, iris, ix, iy, ir * 0.82, ir * 1.04, opt.style, imgs.iris);
+      if (imgs.highlight !== false) drawHighlights(g, side, ix, iy, ir * 0.82, ir * 1.04, opt.style);
+      if (ex === 'sad') { g.fillStyle = 'rgba(200,230,255,0.75)'; g.beginPath(); g.ellipse(-24, H * 0.6, 10, 6, 0, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+      drawLashes(g, W, H, tilt);
+      // 眉(前髪のすき間から少し見える)
+      g.strokeStyle = '#3a2440'; g.lineWidth = 4.5;
+      const by = -H - 32;
+      g.beginPath();
+      if (ex === 'angry') { g.moveTo(-W * 0.9, by + 16); g.lineTo(W * 0.8, by - 6); }
+      else if (ex === 'sad') { g.moveTo(-W * 0.9, by - 8); g.lineTo(W * 0.8, by + 6); }
+      else if (ex === 'surprise') { g.moveTo(-W * 0.8, by - 8); g.quadraticCurveTo(0, by - 20, W * 0.8, by - 6); }
+      else { g.moveTo(-W * 0.8, by + 2); g.quadraticCurveTo(0, by - 8, W * 0.8, by); }
+      g.stroke();
+      g.restore();
+    });
+  }
+
+  const FACE_EXPRESSIONS = ['normal', 'surprise', 'angry', 'smile', 'sad'];
+
+  /* 目の画像。描いた目の代わりに画像を使う(透過 PNG 推奨)
+     spec = {
+       iris: 'iris.png' または { crimson: 'red.png', indigo: 'blue.png', … }  … 虹彩だけ差し替え(まぶた・表情・まばたきは描画のまま)
+       full: { normal: 'eyes_normal.png', smile: …, closed: … }               … 両目の絵を表情ごとに丸ごと差し替え(512:232 の比率)
+       highlight: false                                                        … 虹彩画像に光が描き込み済みなら描き足さない
+     }
+     値は URL のほか、読み込み済みの Image / Canvas でもよい。null で描画に戻す */
+  function setEyeImages(F, spec) {
+    const ver = ++F.imgVer;
+    const load = (src) => {
+      if (!src || typeof src !== 'string') return src || null;
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => { if (F.imgVer === ver) F.key = ''; }; // 読み終えたら描き直す
+      im.src = src;
+      return im;
+    };
+    const ready = (im) => im && (!(im instanceof Image) || (im.complete && im.naturalWidth > 0));
+    const map = (o) => { const out = {}; Object.keys(o || {}).forEach((k) => (out[k] = load(o[k]))); return out; };
+    if (!spec) { F.images = null; F.key = ''; return; }
+    const iris = spec.iris;
+    F.images = {
+      iris: typeof iris === 'string' || (iris && !(iris.constructor === Object)) ? { '*': load(iris) } : map(iris),
+      full: map(spec.full), highlight: spec.highlight, ready,
+    };
+    F.key = '';
+  }
+  function eyeImagesFor(F) {
+    const E = F.images;
+    if (!E) return null;
+    const iris = E.iris[F.colorKey] || E.iris['*'];
+    const full = {};
+    Object.keys(E.full).forEach((k) => { if (E.ready(E.full[k])) full[k] = E.full[k]; });
+    return { iris: E.ready(iris) ? iris : null, full: Object.keys(full).length ? full : null, highlight: E.highlight };
+  }
+
   global.HumanoidCore = {
-    version: '2026.10.09',
+    version: '2026.10.10',
     HANDS,
+    drawAnimeEyes: drawEyes, EYE_SIZE: { width: EYE_W, height: EYE_H, res: RES }, FACE_EXPRESSIONS, IRIS_STYLES,
     STANDARD_BASE,
     STANDARD_SIDE,
     makeUtils,
@@ -253,6 +473,8 @@
      *   api(ctx)                           公開 API に追加するもの
      *   update(ctx, dt, time, pose)        毎フレームの追加処理
      *   handStyle: { scale, armor, cuff, glow, glove, knuckle, plate }  標準の手の作り
+     *   face: true | { draw, expressions, irisStyles, iris, width, height, res }  キャンバスに描く目(M.eyes を貼る形状はキャラが作る)
+     *   jump: { height, flip, tuck } | false  共通の跳躍(既定 高さ 0.75 m・前宙 360°)
      */
     create(THREE, parentNode, options, spec) {
       options = options || {};
@@ -324,6 +546,43 @@
         strands: [],        // 毛の束 { anchor: 'head', points: [[x,y,z]...], width, mat, stiff }
         cape: { anchor: 'chest' }, // マント(null で無し)。pins(u) で上端の固定点を変えられる
       };
+      /* ---------- 顔(spec.face): キャンバスに描く目 ----------
+         M.eyes(目の絵の素材)を用意し、表情・まばたき・技の間の表情・瞳の模様・画像差し替えを受け持つ。
+         目の絵を貼る形状はキャラ側が M.eyes で作る */
+      let face = null;
+      if (spec.face) {
+        const fs = spec.face === true ? {} : spec.face;
+        face = {
+          draw: fs.draw || drawEyes, expressions: fs.expressions || FACE_EXPRESSIONS, irisStyles: fs.irisStyles || IRIS_STYLES,
+          iris: fs.iris || ['#2a1a5a', '#6a4ad8', '#c8b4ff'], expr: 'normal', blinkOn: options.blink !== false,
+          irisStyle: 'normal', colorKey: null, images: null, imgVer: 0, key: '', nextBlink: 2, blinkT: 0, autoExpr: null, autoLive: 0,
+        };
+        if (face.expressions.indexOf(options.expr) >= 0) face.expr = options.expr;
+        if (face.irisStyles.indexOf(options.irisStyle) >= 0) face.irisStyle = options.irisStyle;
+        face.canvas = document.createElement('canvas');
+        face.canvas.width = (fs.width || EYE_W) * (fs.res || RES); face.canvas.height = (fs.height || EYE_H) * (fs.res || RES);
+        face.tex = U.srgbTex(new THREE.CanvasTexture(face.canvas));
+        M.eyes = new THREE.MeshBasicMaterial({ map: face.tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
+        M.eyes.color.setScalar(0.92);
+        ctx.face = face;
+        if (options.eyeImages) setEyeImages(face, options.eyeImages);
+      }
+      // まばたき(数秒おき。ときどき二度まばたき)と描き直し(見た目が変わったときだけ)
+      function updateFace(dt) {
+        if (!face) return;
+        face.nextBlink -= dt;
+        if (face.nextBlink <= 0) { face.blinkT = 0.15; face.nextBlink = 2.5 + Math.random() * 3; if (Math.random() < 0.2) face.nextBlink = 0.3; }
+        let open = 1;
+        if (face.blinkT > 0) { face.blinkT -= dt; open = Math.abs(Math.cos(Math.PI * Math.max(0, face.blinkT) / 0.15)); }
+        if (!face.blinkOn) open = 1;
+        let expr = face.expr;
+        if (face.autoLive > 0) { face.autoLive--; expr = face.autoExpr; } // 技の間の表情
+        const key = [expr, open.toFixed(1), face.iris.join(), face.irisStyle, face.colorKey, face.imgVer].join('|');
+        if (key === face.key) return;
+        face.key = key;
+        face.draw(face.canvas.getContext('2d'), face.iris, expr, open, { style: face.irisStyle, images: eyeImagesFor(face) });
+        face.tex.needsUpdate = true;
+      }
       if (spec.materials) spec.materials(ctx);
       const NO_OUTLINE = ['glow', 'glowSoft', 'blade', 'bladeCore', 'slit'].concat(spec.noOutline || []).map((k) => M[k]).filter(Boolean);
 
@@ -568,12 +827,52 @@
       const RUN = { freq: 1.4, stride: 0.95, duty: 0.36, lift: 0.3, heel: 6, toeOff: 30, heelOff: 0.45, width: 0.6, toeOut: 4, zOff: 0.06, crouch: 0.05,
         bob: 0.05, sway: 0.012, twist: 12, drop: 3, lean: 11, pitch: 2.5, arm: 32, armBase: 6, elbow: 78, elbowSwing: 12, run: true };
 
+      /* ---------- 跳躍(共通) ---------- */
+      const win = (t, a, b) => smooth((t - a) / (b - a)); // a→b で 0→1
+      const bump = (t, a, b) => (t > a && t < b ? Math.sin(Math.PI * (t - a) / (b - a)) : 0);
+      // 宙に浮く: 腰を hgt だけ上げ、足は tuck だけさらに引き上げる(膝を抱える)
+      function air(P, hgt, tuck) {
+        P.root[1] += hgt;
+        ['L', 'R'].forEach((s) => { const f = P.feet[s]; f[3] = Math.max(f[3], 0) + hgt + tuck * 0.34; f[1] += tuck * 0.1; f[4] = 20 * tuck; });
+      }
+      // しゃがみ込み(踏み切り前・着地): 腰を落として前へ倒す
+      function squat(P, c) {
+        P.root[1] -= 0.26 * c; P.root[2] -= 0.03 * c;
+        addJ(P, 'hips', 28 * c); addJ(P, 'spine', 10 * c); addJ(P, 'neck', -14 * c); addJ(P, 'head', -10 * c);
+      }
+      // 技の間だけ表情を変える(spec.face があるとき)
+      const mood = (e) => { if (face) { face.autoExpr = e; face.autoLive = 3; } };
+      const JUMP = spec.jump === false ? null : Object.assign({ height: 0.75, flip: 360, tuck: 1 }, spec.jump);
+      // しゃがんで腕を引き、つま先で踏み切る。宙では膝を抱えて(flip があれば前宙)、着地で衝撃を吸収する
+      function jump(P, t) {
+        fromStatic(P, 'idle');
+        freeArm(P, 'L', freeW.L); freeArm(P, 'R', freeW.R);
+        const c = t < 0.26 ? win(t, 0, 0.26) : 1 - win(t, 0.26, 0.36);
+        const u = clamp((t - 0.33) / 0.8, 0, 1), hgt = t > 0.33 && t < 1.13 ? 4 * u * (1 - u) * JUMP.height : 0;
+        const tuck = bump(t, 0.42, 1.08) * JUMP.tuck;
+        const land = t < 1.13 ? 0 : t < 1.24 ? win(t, 1.13, 1.24) : 1 - win(t, 1.24, 1.75);
+        squat(P, c + land * 0.85);
+        air(P, hgt, tuck);
+        P.flip = JUMP.flip * ease(clamp((t - 0.45) / 0.58, 0, 1));
+        addJ(P, 'hips', 30 * tuck); addJ(P, 'spine', 22 * tuck); addJ(P, 'neck', 10 * tuck);
+        // 腕(空いている腕ほど大きく): 踏み切り前に後ろへ引き、踏み切りで振り上げ、宙では膝を抱える
+        const up = bump(t, 0.24, 0.5);
+        ['L', 'R'].forEach((s) => {
+          const w = 0.45 + 0.55 * freeW[s];
+          addJ(P, 'shoulder_' + s, w * (45 * c - 130 * up - 40 * tuck), 0, (s === 'L' ? 1 : -1) * 10 * up * w);
+          addJ(P, 'elbow_' + s, -95 * tuck * w);
+        });
+        if (t > 0.26 && t < 0.38) ['L', 'R'].forEach((s) => (P.feet[s][4] = 30 * bump(t, 0.26, 0.38))); // つま先で蹴る
+        P.look = 0;
+      }
+
       const MODES = {
         idle: (P, t) => { fromStatic(P, 'idle'); freeArm(P, 'L', freeW.L); freeArm(P, 'R', freeW.R); breathe(P, t); P.look = 1; },
         // その場歩き・走り(gait 参照)。脚は IK で接地を保つ
         walk: (P, t) => { fromStatic(P, 'idle'); gait(P, t, Object.assign({}, WALK, spec.walk)); P.look = 0.35; },
         run: (P, t) => { fromStatic(P, 'idle'); gait(P, t, Object.assign({}, RUN, spec.run)); P.look = 0; },
         hold: (P) => copyPose(P, held), // 関節エディタで手動編集中
+        jump: (P, t) => (JUMP ? jump(P, t) : fromStatic(P, 'idle')),
         // 乗車: 腰を座席の目印に置き、脚 IK で足をステップへ。腕は applyPose で IK によりグリップへ
         ride: (P, t) => {
           fromStatic(P, 'idle');
@@ -592,9 +891,10 @@
           });
         },
       };
-      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS, gait, WALK, RUN, freeArm, freeW, ctx };
+      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS, gait, WALK, RUN, freeArm, freeW, ctx, air, squat, mood, win, bump };
       if (spec.modes) Object.assign(MODES, spec.modes(helpers));
-      const ACTIONS = spec.actions || {};
+      const ACTIONS = Object.assign(JUMP ? { jump: { dur: 1.75, next: 'idle', blend: 0.2 } } : {}, spec.actions);
+      if (!JUMP) delete MODES.jump;
 
       /* ---------- 状態 ---------- */
       const state = { ik: options.ik !== false, physics: options.physics !== false, look: options.look !== false, pulse: options.glowPulse !== false };
@@ -950,6 +1250,7 @@
         const v = COLORS[id];
         if (!v) return;
         colorId = id;
+        if (face) { if (v.iris) face.iris = v.iris; face.colorKey = id; face.key = ''; }
         if (v.steel !== undefined) M.steel.color.copy(C(v.steel));
         if (v.trim !== undefined) M.gold.color.copy(C(v.trim));
         if (v.paint !== undefined) M.paint.color.copy(C(v.paint));
@@ -1001,6 +1302,7 @@
         if (cape) cape.update(dt);
         updateStrands(dt);
         if (trail) trail.update(cur.trail, time);
+        updateFace(dt);
         if (spec.update) spec.update(ctx, dt, time, cur); // キャラ固有の毎フレーム処理(まばたきなど)
         const pulse = state.pulse ? Math.sin(time * 2.2) : 0; // 発光の点滅(ゆっくり明滅)
         M.glow.emissiveIntensity = (glowBase.glow + pulse * 1.5) * gk;
@@ -1097,6 +1399,15 @@
         isLeg,
         ctx,
       };
+      if (face) Object.assign(api, {
+        setExpr: (e) => { if (face.expressions.indexOf(e) >= 0) face.expr = e; },
+        getExpr: () => face.expr,
+        setBlink: (on) => { face.blinkOn = !!on; },
+        setIrisStyle: (st) => { if (face.irisStyles.indexOf(st) >= 0) face.irisStyle = st; },
+        getIrisStyle: () => face.irisStyle,
+        setEyeImages: (s) => setEyeImages(face, s),
+        EXPRESSIONS: face.expressions, IRIS_STYLES: face.irisStyles,
+      });
       if (spec.api) Object.assign(api, spec.api(ctx, api));
       return api;
     },
