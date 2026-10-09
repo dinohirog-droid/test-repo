@@ -378,10 +378,12 @@
 
       // 前髪・横髪(フードの縁からのぞく): 奥と手前の 2 層。分け目(やや左)から外へ流れ、毛先はとがる。中央は短く目にかからない
       const PART = 0.012;
+      ctx.hoodBangs = [];
       const bang = (x, L, w, z, mat) => {
         const dir = Math.sign(x - PART) || 1, flow = 0.012 + Math.abs(x - PART) * 0.18;
-        ctx.strands.push({ anchor: 'head', mat, width: w, stiff: 0.45, flat: 0.32, taper: 0.97,
+        ctx.hoodBangs.push({ anchor: 'head', mat, width: w, stiff: 0.45, flat: 0.32, taper: 0.97,
           points: [[x * 0.9, 0.174, z - 0.012], [x, 0.168, z], [x + dir * flow * 0.3, 0.172 - L * 0.5, z + 0.004], [x + dir * flow * 0.75, 0.172 - L, z + 0.002], [x + dir * flow, 0.168 - L * 1.12, z - 0.001]] });
+        ctx.strands.push(ctx.hoodBangs[ctx.hoodBangs.length - 1]);
       };
       for (let i = 0; i < 7; i++) { // 奥の層
         const u = (i / 6) * 2 - 1, x = u * 0.066;
@@ -392,8 +394,32 @@
         bang(x, 0.022 + 0.006 * Math.abs(Math.cos(i * 2.1)) + Math.pow(Math.abs(u), 2) * 0.03, 0.011, 0.104, M.hairHi);
       }
       // 横髪: 頬に沿って下り、毛先は少し内へ向く
-      [-1, 1].forEach((m) => [[0.02, 0.018, M.hair, 0], [0.013, 0.012, M.hairHi, 0.006]].forEach(([w, , mat, dz]) => ctx.strands.push({ anchor: 'head', mat, width: w, stiff: 0.25, flat: 0.32, taper: 0.95,
-        points: [[m * 0.078, 0.15, 0.072 + dz], [m * 0.088, 0.11, 0.075 + dz], [m * 0.093, 0.06, 0.072 + dz], [m * 0.092, 0.01, 0.068 + dz], [m * 0.086, -0.03, 0.064 + dz], [m * 0.076, -0.055, 0.062 + dz]] })));
+      [-1, 1].forEach((m) => [[0.02, 0.018, M.hair, 0], [0.013, 0.012, M.hairHi, 0.006]].forEach(([w, , mat, dz]) => { const st = { anchor: 'head', mat, width: w, stiff: 0.25, flat: 0.32, taper: 0.95,
+        points: [[m * 0.078, 0.15, 0.072 + dz], [m * 0.088, 0.11, 0.075 + dz], [m * 0.093, 0.06, 0.072 + dz], [m * 0.092, 0.01, 0.068 + dz], [m * 0.086, -0.03, 0.064 + dz], [m * 0.076, -0.055, 0.062 + dz]] };
+        ctx.strands.push(st); ctx.hoodBangs.push(st); }));
+      // フードを外したときの前髪と横髪: 頭頂から頭の丸みに沿って額へ下りる房(後ろの髪と一続きに見える)。分け目(やや左)から外へ流れる
+      (function () {
+        const HC = V3(0, 0.094, -0.006), SX = 0.088, SY = 0.107, SZ = 0.098, D2 = Math.PI / 180, PARTD = 8;
+        const skinZ = (y) => 0.088 * Math.sqrt(Math.max(0, 1 - ((y - 0.09) / 0.1) ** 2)); // 地肌の前面
+        const front = (phiDeg, yEnd, w, layer) => {
+          const dir = Math.sign(phiDeg - PARTD) || 1, flow = (6 + Math.abs(phiDeg - PARTD) * 0.35) * D2, pts = [];
+          for (let k = 0; k <= 5; k++) {
+            const f = k / 5, th = 0.18 + 0.82 * f, phi = phiDeg * D2 + dir * flow * f * f, puff = 1.07 + 0.05 * Math.sin(Math.PI * f) + layer * 0.03;
+            pts.push(V3(SX * puff * Math.sin(th) * Math.sin(phi), HC.y + SY * puff * Math.cos(th), HC.z + SZ * puff * Math.sin(th) * Math.cos(phi)));
+          }
+          const last = pts[pts.length - 1], phiE = phiDeg * D2 + dir * flow;
+          [0.5, 1].forEach((f) => { // 額の前を下り、毛先は少し顔側へ
+            const y = last.y + (yEnd - last.y) * f, r = Math.max(Math.hypot(last.x, last.z - HC.z), skinZ(y) + 0.012 + layer * 0.004 - f * 0.002);
+            pts.push(V3(r * Math.sin(phiE + dir * 0.04 * f), y, HC.z + r * Math.cos(phiE + dir * 0.04 * f)));
+          });
+          return add(head, U.hairLock(pts, w, 0.006, HC, 0.95), layer ? M.hairHi : M.hair);
+        };
+        // 奥の層(中央は短く目にかからない、外ほど長い)と手前の層
+        [-46, -34, -22, -10, 2, 14, 26, 38, 50].forEach((a, i) => ctx.hairParts.push(front(a, 0.127 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.045 + 0.009 * Math.sin(i * 2.3), 0.016, 0)));
+        [-40, -28, -16, -4, 20, 32, 44].forEach((a, i) => ctx.hairParts.push(front(a, 0.136 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.04 + 0.008 * Math.cos(i * 1.7), 0.012, 1)));
+        // 横髪(顔の横を頬まで)
+        [-1, 1].forEach((m) => ctx.hairParts.push(front(m * 58, 0.03, 0.017, 0), front(m * 52, 0.05, 0.013, 1)));
+      })();
       // マフラーの端(紅、背中へ流れる)
       [-1, 1].forEach((m) => ctx.strands.push({ anchor: 'chest', mat: M.paint, width: 0.04, stiff: 0.06, flat: 0.25,
         points: [[m * 0.03, 0.24, -0.06], [m * 0.04, 0.21, -0.1], [m * 0.05, 0.14, -0.13], [m * 0.06, 0.05, -0.15], [m * 0.065, -0.05, -0.16], [m * 0.07, -0.15, -0.17], [m * 0.07, -0.25, -0.17]] }));
@@ -684,6 +710,7 @@
         ctx.maskParts.forEach((o) => (o.visible = look.mask));
         ctx.hairParts.concat(ctx.ears).forEach((o) => (o.visible = !look.hood));
         ctx.ponytail.forEach((st) => st.mesh && (st.mesh.visible = !look.hood));
+        ctx.hoodBangs.forEach((st) => st.mesh && (st.mesh.visible = look.hood)); // フードの縁からのぞく前髪はフードのときだけ
         ctx.eyeMesh.visible = look.mask;
         ctx.faceMesh.visible = !look.mask;
       };
