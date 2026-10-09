@@ -476,31 +476,97 @@
       const held = newPose();
       let rideT = null;
 
+      /* ---------- 歩行・走行 ----------
+         片脚の周期を立脚(足が地面について後ろへ流れる)と遊脚(持ち上げて前へ運ぶ)に分ける。
+         かかとから着地してつま先で蹴り出し、腰は上下・左右に揺れ、骨盤は脚と、肩は腕と逆にひねる */
+      // 何も持っていない腕の自然な形(左基準。右は y・z を反転)
+      const FREE_ARM = Object.assign({ shoulder: [4, 0, 8], elbow: [-14, 0, 0], forearm: [0, 8, 0], wrist: [-6, 0, 4] }, spec.freeArm);
+      const freeW = { L: 0, R: 0 }; // 腕が空いている度合い(持ち物の付け外しで滑らかに変わる)
+      const armOf = (P, s, part) => P.j[part + '_' + s];
+      function freeArm(P, s, w, swing, bend) {
+        if (w <= 0.001) return;
+        const m = s === 'L' ? 1 : -1;
+        ['shoulder', 'elbow', 'forearm', 'wrist'].forEach((part) => {
+          const a = armOf(P, s, part), v = FREE_ARM[part];
+          a[0] = lerp(a[0], v[0], w); a[1] = lerp(a[1], v[1] * m, w); a[2] = lerp(a[2], v[2] * m, w);
+        });
+        armOf(P, s, 'shoulder')[0] += (swing || 0) * w;
+        armOf(P, s, 'elbow')[0] -= (bend || 0) * w;
+        const h = P.hand[s], r = HANDS.relax;
+        for (let i = 0; i < 4; i++) h.c[i] = lerp(h.c[i], r.c[i], w);
+        h.th = lerp(h.th, r.th, w); h.sp = lerp(h.sp, r.sp, w);
+      }
+      function legGeom() {
+        const L1 = J.knee_L.position.length(), L2 = J.ankle_L.position.length();
+        const hipH = JL.hips.rest.y + J.hip_L.position.y - ANKLE_H; // 立った時の股関節から足首までの高さ
+        const toe = J.toe_L ? J.toe_L.position : V3(0, -0.045, 0.09);
+        return { L: L1 + L2, hipH, tz: toe.z, ty: -toe.y };
+      }
+      // つま先を支点にかかとを上げた時 / かかとを支点につま先を上げた時の足首の持ち上がり
+      const toeLift = (g, p) => g.ty * (Math.cos(p * D2R) - 1) + g.tz * Math.sin(p * D2R);
+      const heelLift = (g, q) => ANKLE_H * (Math.cos(q * D2R) - 1) + g.tz * 0.6 * Math.sin(q * D2R);
+      function gait(P, t, o) {
+        const g = legGeom();
+        const ph = (t * o.freq) % 1, TAU = Math.PI * 2;
+        const stride = o.stride * g.L, half = stride / 2;
+        // 前後いっぱいに足を出しても脚が伸び切らないよう腰を下げる
+        const drop = g.hipH - Math.sqrt(Math.max(0.01, g.L * g.L * 0.985 - half * half)) + o.crouch * g.L;
+        const width = Math.abs(STATIC.idle.feet.L[0]) * o.width;
+        ['L', 'R'].forEach((s, i) => {
+          const m = s === 'L' ? 1 : -1;
+          const p = (ph + i * 0.5) % 1;
+          let z, lift, pitch;
+          if (p < o.duty) { // 立脚: 前から後ろへ等速で流れる
+            const u = p / o.duty;
+            z = half * (1 - 2 * u);
+            const hs = 1 - smooth(u / 0.18), ho = smooth((u - o.heelOff) / (1 - o.heelOff));
+            pitch = -o.heel * hs + o.toeOff * ho;
+            lift = (pitch < 0 ? heelLift(g, -pitch) : toeLift(g, pitch));
+          } else { // 遊脚: 持ち上げて前へ。蹴り出しの傾きを戻し、着地前につま先を上げる
+            const u = (p - o.duty) / (1 - o.duty);
+            z = -half + stride * ease(u);
+            const toePart = o.toeOff * (1 - smooth(u / 0.45)), heelPart = o.heel * smooth((u - 0.55) / 0.45);
+            pitch = toePart - heelPart;
+            lift = o.lift * g.L * Math.sin(Math.PI * Math.pow(u, 0.75)) + Math.max(toeLift(g, toePart), heelLift(g, heelPart));
+          }
+          P.feet[s] = [m * width, z + o.zOff * g.L, m * o.toeOut, lift, pitch, 0];
+        });
+        // 左脚の立脚のまん中 = ph = duty/2。重心はそこで(走りは最も低く / 歩きは最も高く)
+        const mid = o.duty / 2;
+        const bobW = 0.5 - 0.5 * Math.cos(TAU * (2 * ph - 2 * mid)); // 立脚のまん中で 0
+        const bob = o.run ? bobW * o.bob * g.L : (1 - bobW) * o.bob * g.L;
+        const sw = Math.cos(TAU * (ph - mid)); // +1: 左脚に乗る
+        P.root = [sw * o.sway * g.L, -drop + bob, 0];
+        const fwd = Math.cos(TAU * ph); // +1: 左脚が前(右腕が前)
+        addJ(P, 'hips', o.lean * 0.4, -o.twist * fwd, o.drop * sw);
+        addJ(P, 'spine', o.lean * 0.6 + o.pitch * Math.cos(TAU * 2 * (ph - mid)), o.twist * 0.6 * fwd, -o.drop * 0.7 * sw);
+        addJ(P, 'chest', o.lean * 0.3, o.twist * 0.9 * fwd, -o.drop * 0.3 * sw);
+        addJ(P, 'neck', -o.lean * 0.5, -o.twist * 0.6 * fwd, 0);
+        addJ(P, 'head', -o.lean * 0.4, -o.twist * 0.3 * fwd, 0);
+        // 腕は脚と逆に振る(少し遅れて)。前に振るほど肘を曲げる
+        const af = Math.cos(TAU * (ph - 0.04));
+        ['L', 'R'].forEach((s) => {
+          const k = s === 'L' ? -af : af; // +1: この腕が前
+          const w = freeW[s];
+          freeArm(P, s, w, -o.arm * k + o.armBase, o.elbow + o.elbowSwing * Math.max(0, k));
+          addJ(P, 'shoulder_' + s, -o.arm * 0.3 * k * (1 - w)); // 持ち物のある腕は控えめに
+          if (o.run && w > 0) {
+            const h = P.hand[s], f = HANDS.fist;
+            for (let i = 0; i < 4; i++) h.c[i] = lerp(h.c[i], f.c[i] * 0.75, w);
+            h.th = lerp(h.th, 0.7, w);
+          }
+        });
+      }
+      const WALK = { freq: 0.95, stride: 0.62, duty: 0.6, lift: 0.1, heel: 14, toeOff: 26, heelOff: 0.62, width: 0.75, toeOut: 7, zOff: 0.02, crouch: 0.012,
+        bob: 0.022, sway: 0.03, twist: 7, drop: 3.5, lean: 3, pitch: 1, arm: 20, armBase: 2, elbow: 10, elbowSwing: 18, run: false };
+      const RUN = { freq: 1.4, stride: 0.95, duty: 0.36, lift: 0.3, heel: 6, toeOff: 30, heelOff: 0.45, width: 0.6, toeOut: 4, zOff: 0.06, crouch: 0.05,
+        bob: 0.05, sway: 0.012, twist: 12, drop: 3, lean: 11, pitch: 2.5, arm: 32, armBase: 6, elbow: 78, elbowSwing: 12, run: true };
+
       const MODES = {
-        idle: (P, t) => { fromStatic(P, 'idle'); breathe(P, t); P.look = 1; },
-        // その場歩き: 足首目標を前後に動かし、脚 IK で接地を保つ
-        walk: (P, t) => {
-          fromStatic(P, 'idle');
-          const w = t * 5.4, s = Math.sin(w), c = Math.cos(w);
-          P.feet.L = [0.13, 0.17 * s, 6, Math.max(0, c) * 0.07, Math.max(0, -s) * 12 * Math.max(0, -c), 0];
-          P.feet.R = [-0.13, -0.17 * s, -6, Math.max(0, -c) * 0.07, Math.max(0, s) * 12 * Math.max(0, c), 0];
-          P.root[1] = -0.03 + 0.012 * Math.cos(2 * w);
-          addJ(P, 'hips', 0, 6 * s, 2 * c); addJ(P, 'spine', 2, -4 * s); addJ(P, 'chest', 0, -3 * s);
-          addJ(P, 'shoulder_R', -12 * s); addJ(P, 'shoulder_L', 6 * s);
-          P.look = 0.4;
-        },
-        run: (P, t) => {
-          fromStatic(P, 'idle');
-          const w = t * 9, s = Math.sin(w), c = Math.cos(w);
-          P.feet.L = [0.12, 0.3 * s + 0.04, 4, Math.max(0, c) * 0.2, Math.max(0, -s) * 25, 0];
-          P.feet.R = [-0.12, -0.3 * s + 0.04, -4, Math.max(0, -c) * 0.2, Math.max(0, s) * 25, 0];
-          P.root = [0, -0.07 + 0.035 * Math.abs(Math.cos(w)), 0.04];
-          addJ(P, 'hips', 6, 10 * s); addJ(P, 'spine', 10, -7 * s); addJ(P, 'chest', 4, -5 * s);
-          P.j.neck = [-6, 0, 0]; P.j.head = [-8, 0, 0];
-          P.j.shoulder_R = [-15 - 35 * s, -20, -10]; P.j.elbow_R = [-70, 0, 0]; P.j.forearm_R = [0, 20, 0]; P.j.wrist_R = [40, 0, 0];
-          P.j.shoulder_L = [-30 + 20 * s, 0, 18]; P.j.elbow_L = [-95, 0, 0];
-          P.look = 0;
-        },
+        idle: (P, t) => { fromStatic(P, 'idle'); freeArm(P, 'L', freeW.L); freeArm(P, 'R', freeW.R); breathe(P, t); P.look = 1; },
+        // その場歩き・走り(gait 参照)。脚は IK で接地を保つ
+        walk: (P, t) => { fromStatic(P, 'idle'); gait(P, t, Object.assign({}, WALK, spec.walk)); P.look = 0.35; },
+        run: (P, t) => { fromStatic(P, 'idle'); gait(P, t, Object.assign({}, RUN, spec.run)); P.look = 0; },
         hold: (P) => copyPose(P, held), // 関節エディタで手動編集中
         // 乗車: 腰を座席の目印に置き、脚 IK で足をステップへ。腕は applyPose で IK によりグリップへ
         ride: (P, t) => {
@@ -529,6 +595,8 @@
       const equip = { L: true, R: true };
       ['L', 'R'].forEach((s) => { const it = items[s]; if (it && options[it.name] === false) equip[s] = false; });
       const handOverride = { L: null, R: null };
+      const freeTarget = (s) => (items[s] && equip[s] && !(handOverride[s] && handOverride[s] !== 'grip') ? 0 : 1);
+      ['L', 'R'].forEach((s) => (freeW[s] = freeTarget(s)));
       let currentMode = MODES[options.mode] ? options.mode : 'idle', mt = 0;
       const cur = newPose(), from = newPose(), target = newPose();
       let blendT = 1, blendDur = 0.5, external = null, lookYaw = 0, lookPitch = 0;
@@ -574,7 +642,7 @@
         knee.quaternion.setFromAxisAngle(XA, Math.PI - Math.acos(clamp((L1 * L1 + L2 * L2 - dist * dist) / (2 * L1 * L2), -1, 1)));
         const want = figure.getWorldQuaternion(_q).multiply(_q2.setFromEuler(_e.set(f[4] * D2R, yaw, 0, 'YXZ')));
         ankle.quaternion.copy(knee.getWorldQuaternion(_q3).invert().multiply(want));
-        if (toe) toe.rotation.set(clamp(-f[4], -45, 30) * D2R, 0, 0); // つま先立ちでも指先は地面に
+        if (toe) toe.rotation.set(clamp(-Math.max(0, f[4]), -45, 30) * D2R, 0, 0); // つま先立ちでも指先は地面に
         [hip, knee, ankle, toe].forEach((o) => {
           if (!o) return;
           const a3 = P.j[o.name];
@@ -893,6 +961,7 @@
         mt += dt;
         const act = ACTIONS[currentMode];
         if (act && mt >= act.dur) setMode(act.next);
+        ['L', 'R'].forEach((s) => (freeW[s] += (freeTarget(s) - freeW[s]) * Math.min(1, dt * 6)));
         if (external) copyPose(cur, external);
         else {
           MODES[currentMode](target, mt);
