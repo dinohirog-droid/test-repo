@@ -382,7 +382,7 @@ document.querySelectorAll('[data-hand]').forEach((b) => (b.onclick = () => {
   refresh();
 }));
 $('#hand-mirror').onclick = () => { P.hand[handSide === 'R' ? 'L' : 'R'] = JSON.parse(JSON.stringify(H())); refresh(); commit(); toast('反対の手へコピーしました'); };
-$('#hand-json').onclick = () => { copyText(JSON.stringify(round(H(), 2))); toast('手の形をコピーしました'); };
+$('#hand-json').onclick = () => copyText(JSON.stringify(round(H(), 2)));
 
 /* ---------- 腕 IK ・ドラッグ ---------- */
 const tc = new TransformControls(camera, hit);
@@ -585,8 +585,21 @@ $('#export-seq').onclick = () => {
   $('#out').value = out.join('\n');
   toast('技を書き出しました');
 };
-function copyText(t) { try { navigator.clipboard.writeText(t); } catch (e) { /* 失敗しても欄から選んでコピーできる */ } }
-$('#copy-out').onclick = () => { copyText($('#out').value); toast('コピーしました'); };
+// クリップボードへコピー。ファイルを直接開いたとき(file://)は navigator.clipboard が使えないので、
+// 書き出し欄を選んで execCommand で写す。どちらも失敗したら知らせる(古い内容が残ったまま貼られるのを防ぐ)
+function copyText(t) {
+  const fallback = () => {
+    const ta = $('#out'), keep = ta.value;
+    ta.value = t; ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (keep !== t && ta.value === t && keep) ta.value = keep;
+    toast(ok ? 'コピーしました' : 'コピーできませんでした。書き出し欄を選んで Ctrl+C でコピーしてください');
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(() => toast('コピーしました'), fallback);
+  else fallback();
+}
+$('#copy-out').onclick = () => copyText($('#out').value);
 const docState = () => ({ app: 'pose-editor', char: CHAR, name: $('#pose-name').value, pose: snapshot(), frames });
 function loadDoc(d) {
   if (d.pose) restore(d.pose);

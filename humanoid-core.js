@@ -180,8 +180,9 @@
     };
     // ある関節の空間で、配下の形状すべてを点の関数で変形する(兜を尖らせる等)
     // 刀身などを弓なりにしならせる(頂点を CPU で曲げる。輪郭線は同じ形状を使うので一緒に曲がる)。
-    // group の座標で y = start から先(長さ len)を、z の向きへ全体で theta ラジアン曲げる。
-    // 戻り値 bend(theta) で曲げ、bend.point(p) で曲げた後の位置、bend.tangent(p) で刃の向きを得る
+    // group の座標で y = start から先(長さ len)を曲げる。bend(th) は片持ち(先が自由): 全体で th ラジアン曲がる。
+    // bend(a, 'bow') は両端を止めた弓なり: 中ほどが a(m)ふくらみ、先の位置は動かない(先をつかんで溜めるとき)。
+    // bend.point(p) で曲げた後の位置、bend.tangent(p) で刃の向きを得る
     U.makeBender = (group, meshes, start, len, axis) => {
       const AX = axis === 'x'; // 'x' なら x の向きへ曲げる(刃の向き)。既定は z(刀身の平らな面の向き)
       const v = V3(0, 0, 0);
@@ -192,17 +193,19 @@
         for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(mm); orig[i * 3] = v.x; orig[i * 3 + 1] = v.y; orig[i * 3 + 2] = v.z; }
         return { m, mi, pa, orig };
       });
-      let cur = 0;
+      let cur = 0, mode = 'arc';
       const map = (x, y, z, th, out) => {
         const s = y - start, c = AX ? x : z;
         if (Math.abs(th) < 1e-5 || s <= 0) return out.set(x, y, z);
+        if (mode === 'bow') { const u = Math.min(1, s / len), nc = c + th * Math.sin(Math.PI * u); return AX ? out.set(nc, y, z) : out.set(x, y, nc); }
         const k = th / len, a = k * s; // 中心線 (y, c) = (start + sin a / k, (1 - cos a) / k)、法線 = (-sin a, cos a)
         const ny = start + Math.sin(a) / k - c * Math.sin(a), nc = (1 - Math.cos(a)) / k + c * Math.cos(a);
         return AX ? out.set(nc, ny, z) : out.set(x, ny, nc);
       };
-      function bend(th) {
-        if (Math.abs(th - cur) < 1e-4) return;
-        cur = th;
+      function bend(th, md) {
+        md = md || 'arc';
+        if (Math.abs(th - cur) < 1e-4 && md === mode) return;
+        cur = th; mode = md;
         recs.forEach((r) => {
           const o = r.orig;
           for (let i = 0; i < r.pa.count; i++) { map(o[i * 3], o[i * 3 + 1], o[i * 3 + 2], th, v).applyMatrix4(r.mi); r.pa.setXYZ(i, v.x, v.y, v.z); }
@@ -212,7 +215,9 @@
         });
       }
       bend.point = (p, out) => map(p.x, p.y, p.z, cur, out || V3(0, 0, 0));
-      bend.tangent = (p, out) => { const a = Math.max(0, p.y - start) * cur / len; return AX ? (out || V3(0, 0, 0)).set(Math.sin(a), Math.cos(a), 0) : (out || V3(0, 0, 0)).set(0, Math.cos(a), Math.sin(a)); };
+      bend.tangent = (p, out) => {
+        if (mode === 'bow') { const u = Math.min(1, Math.max(0, p.y - start) / len), d = cur * Math.PI / len * Math.cos(Math.PI * u), n = Math.hypot(1, d); return AX ? (out || V3(0, 0, 0)).set(d / n, 1 / n, 0) : (out || V3(0, 0, 0)).set(0, 1 / n, d / n); }
+        const a = Math.max(0, p.y - start) * cur / len; return AX ? (out || V3(0, 0, 0)).set(Math.sin(a), Math.cos(a), 0) : (out || V3(0, 0, 0)).set(0, Math.cos(a), Math.sin(a)); };
       bend.get = () => cur;
       return bend;
     };
@@ -989,7 +994,7 @@
           });
         },
       };
-      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS, gait, WALK, RUN, freeArm, freeW, ctx, air, squat, mood, win, bump };
+      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS, gait, WALK, RUN, freeArm, freeW, ctx, air, squat, mood, win, bump, blendHand };
       if (spec.modes) Object.assign(MODES, spec.modes(helpers));
       const ACTIONS = Object.assign(JUMP ? { jump: { dur: 1.75, next: 'idle', blend: 0.2 } } : {}, spec.actions);
       if (!JUMP) delete MODES.jump;

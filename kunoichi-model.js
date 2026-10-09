@@ -105,24 +105,32 @@
       },
       feet: { L: [0.12, 0.2, 20], R: [-0.13, -0.14, -25, 0, 12] },
     },
-    // 流れ星(構え): 柄は胸の右前、刀は胸の前を左前へ渡り、刃は前(相手)を向く。左手は左肩の外で、峰の側から
-    // 切っ先を人差し指と中指の間に挟む(指を鞘の代わりにする)。離すと刀は刃の向き(前)へ弾け、手からは離れる。両腕は腕 IK
+    // 流れ星(構え。ポーズ編集で作成): 柄は右肩の前、刀は体の前を左前へ。左手の人差し指と中指の間で切っ先を挟み、
+    // 指を鞘の代わりにして溜める
     ryuseiSet: {
-      root: [0, -0.15, 0],
+      root: [0.005, -0.23, -0.02],
+      yaw: -1,
       j: {
-        hips: [6, 6, 0], spine: [6, 4, 0], chest: [4, 4, 0], neck: [-8, -8, 0], head: [-8, -6, 0],
-        shoulder_L: [-95, 30, 55], elbow_L: [-95, 0, 0], forearm_L: [0, -30, 0], wrist_L: [0, 0, 0],
+        hips: [25, 22, 0], spine: [8, -10, 0], chest: [4, -10, 0], neck: [-6, -2, 0],
+        head: [-6, -2, 0], shoulder_L: [-41, 16, 113], elbow_L: [-107, 0, 0], forearm_L: [0, 34, 0],
+        wrist_L: [-16, 30, 6], shoulder_R: [-44, 61, -73], elbow_R: [-55, 0, 0], forearm_R: [0, -16, 0],
+        wrist_R: [-2, 9, -1],
       },
-      feet: { L: [0.15, 0.17, 25], R: [-0.15, -0.18, -35] },
+      feet: { L: [0.285, 0.2, 15, 0, 0, 0], R: [-0.4, -0.18, -35, 0, 0, 0] },
+      hand: { L: { f: [[0.42, 0.56, 0.4], [0.73, 0.02, 0.02], [1, 1, 0.9], [1, 1, 0.9]], spr: [0.33, -0.16, -0.05, -0.08], t: { o: 1.1, r: 0.3, f: [0.6, 0.7, 0.6] } }, R: 'grip' },
     },
-    // 流れ星(残心): 左から正面を通って右へ振り抜き、上体は右へ開く。左腕は左へ開いたまま(刃の通り道から外す)
+    // 流れ星(振り終わり): 構えから右肩のひねり・前後と右肘だけを動かし、刃は水平に右前へ。左手は放して開く
     ryuseiCut: {
-      root: [0, -0.2, 0.03],
+      root: [0.005, -0.23, -0.02],
+      yaw: -1,
       j: {
-        hips: [6, -16, 0], spine: [6, -12, 0], chest: [4, -14, 0], neck: [-8, 20, 0], head: [-6, 14, 0],
-        shoulder_L: [-30, 0, 70], elbow_L: [-30, 0, 0],
+        hips: [25, 22, 0], spine: [8, -10, 0], chest: [4, -10, 0], neck: [-6, -2, 0],
+        head: [-6, -2, 0], shoulder_L: [-41, 16, 113], elbow_L: [-107, 0, 0], forearm_L: [0, 34, 0],
+        wrist_L: [-16, 30, 6], shoulder_R: [-10, -90, -73], elbow_R: [-45, 0, 0], forearm_R: [0, -16, 0],
+        wrist_R: [-2, 9, -1],
       },
-      feet: { L: [0.15, 0.2, 25], R: [-0.17, -0.18, -40, 0, 10] },
+      feet: { L: [0.285, 0.2, 15, 0, 0, 0], R: [-0.4, -0.18, -35, 0, 0, 0] },
+      hand: { L: 'open', R: 'grip' },
     },
     stealth: {
       root: [0, -0.3, 0],
@@ -383,8 +391,8 @@
       katana.add(tipReach);
       ctx.reach.katanaTip = tipReach;
       const _t = V3(0, 0, 0), _x = V3(1, 0, 0), _z = V3(0, 0, 0), _m4 = new THREE.Matrix4();
-      ctx.bendKatana = (th) => {
-        bender(th);
+      ctx.bendKatana = (th, md) => {
+        bender(th, md);
         bender.point(tip0, trail.tip);
         bender.point(pinch0, tipReach.position);
         bender.tangent(pinch0, _t);
@@ -395,8 +403,6 @@
         tipReach.quaternion.setFromRotationMatrix(_m4.makeBasis(_t, _x, _z));
       };
       ctx.bendKatana(0);
-      ctx.reach.ryuseiR = new THREE.Object3D(); // 流れ星で右手を動かす目標(体の空間)
-      ctx.figure.add(ctx.reach.ryuseiR);
 
       // 腰の鞘(左)と背の短刀
       const saya = new THREE.Group();
@@ -446,28 +452,6 @@
     poses: POSES,
     modes(h) {
       const { fromStatic, breathe, addJ, seq, clamp, ctx, air, squat, mood, win, bump } = h;
-      // 右手の目標(腕 IK)を、刀が「胸の高さ・半径 r の円の上の手の位置 handDeg」から「刃の向き bladeDeg・仰角 elevDeg」を向くように置く。
-      // 角度は体の正面から左回り(度)。刃(刃先の側)は振る向き(sweep: +1 左回り / -1 右回り)へ、edgeDown(0〜1)だけ下へ向ける
-      const _q1 = new ctx.THREE.Quaternion(), _qa = new ctx.THREE.Quaternion(), _m1 = new ctx.THREE.Matrix4();
-      const _b = new ctx.THREE.Vector3(), _e = new ctx.THREE.Vector3(), _z = new ctx.THREE.Vector3();
-      const MQ = new ctx.THREE.Quaternion().setFromRotationMatrix(new ctx.THREE.Matrix4().makeBasis(
-        new ctx.THREE.Vector3(0, 0, 1), new ctx.THREE.Vector3(-1, 0, 0), new ctx.THREE.Vector3(0, -1, 0)));
-      let relInv = null; // 手首 → 刀 の向きの逆(手の作りで決まる定数。最初に一度だけ測る)
-      const aimKatana = (P, handDeg, bladeDeg, elevDeg, r, sweep, yOff, edgeDown) => {
-        if (!relInv) {
-          const wq = ctx.J.wrist_R.getWorldQuaternion(new ctx.THREE.Quaternion()), kq = ctx.items.R.obj.getWorldQuaternion(new ctx.THREE.Quaternion());
-          relInv = wq.invert().multiply(kq).invert();
-        }
-        const ha = handDeg * Math.PI / 180, ba = bladeDeg * Math.PI / 180, el = elevDeg * Math.PI / 180;
-        const tg = ctx.reach.ryuseiR;
-        tg.position.set(Math.sin(ha) * r, 1.25 + (yOff || 0) + P.root[1], 0.02 + Math.cos(ha) * r);
-        _b.set(Math.sin(ba) * Math.cos(el), Math.sin(el), Math.cos(ba) * Math.cos(el));
-        _e.set(Math.cos(ba) * sweep * (1 - (edgeDown || 0)), -(edgeDown || 0), -Math.sin(ba) * sweep * (1 - (edgeDown || 0))); _e.addScaledVector(_b, -_e.dot(_b)).normalize(); // 刃の向き = 振る向き
-        _z.crossVectors(_e, _b);
-        _q1.setFromRotationMatrix(_m1.makeBasis(_e, _b, _z)); // 刀の向き(体の空間)
-        // 腕 IK は目標の X = 握る棒の向き、Y = 手の甲の向きで手首を決める。刀の向きから逆算する
-        tg.quaternion.copy(_q1).multiply(relInv).multiply(MQ);
-      };
       const twoHands = (P) => { P.reach.L = 'katanaGrip'; P.reachW.L = 1; P.hand.L = { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 }; };
       return {
         // 構え: 中段。右手で柄の鍔元、左手を柄頭側に添える(腕 IK)
@@ -500,32 +484,29 @@
           P.look = 0;
         },
         // 流れ星(虎眼流の奥義に倣った技): 切っ先を左手の指で挟んで刀身をしならせ、溜めた力を離して横薙ぎの一閃
-        //   0〜0.6 構えへ / 0.6〜1.6 溜め(しなりが増し、刀が震える)/ 1.6 離す / 〜1.76 一閃 / 〜2.5 残心 / 〜3.2 構えへ戻る
-        //   右手は腕 IK で、胸の高さの水平な弧に沿って動かす(関節角度の補間では刃の軌道が波打つため)。
-        //   左手は左に置いたまま放すので、刃は左手から離れる向き(前→右)へ走り、左腕を巻き込まない
+        //   0〜0.6 構えへ / 0.6〜1.6 溜め(刀身が弓なりにふくらみ、震える)/ 1.6 離す / 〜1.76 一閃 / 〜2.5 残心 / 〜3.2 構えへ戻る
+        //   一閃は右肩のひねり・前後と右肘だけを連動させる。途中で刃先が下がらないよう、中ほどで肩を少し上げ、肘を伸ばす
         ryusei: (P, t) => {
-          seq(P, t, [[0, 'guard'], [0.6, 'ryuseiSet'], [1.6, 'ryuseiSet'], [1.76, 'ryuseiCut'], [2.5, 'ryuseiCut'], [3.2, 'guard']]);
           const REL = 1.6, SWING = 0.16, charge = win(t, 0.6, 1.55);
-          // 溜め: 腰を沈めてさらにひねる
-          if (t < REL) { P.root[1] -= 0.04 * charge; addJ(P, 'chest', 0, 6 * charge); }
-          // 右手: 構え(胸の右前・刀は左前へ、刃は前(相手)へ、平らな面は水平)から、離した瞬間に切っ先が前へ弾け、正面を通って右へ水平に振り抜く
-          const u = t < REL ? 0 : 1 - Math.pow(1 - Math.min(1, (t - REL) / SWING), 2); // 離した直後が最も速い
-          aimKatana(P, -50 + 10 * u, 45 - 115 * u, 14 - 8 * u, 0.24 + 0.2 * u, -1, 0, 0);
-          P.reach.R = 'ryuseiR'; P.reachW.R = win(t, 0, 0.5) * (1 - win(t, 2.5, 3.1));
-          // 左手: はじめは柄(両手持ち)、構えで切っ先へ移り、離す瞬間に放す
-          if (t < 0.4) { P.reach.L = 'katanaGrip'; P.reachW.L = 1 - win(t, 0.1, 0.4); }
-          else { P.reach.L = 'katanaTip'; P.reachW.L = win(t, 0.35, 0.6) * (1 - win(t, REL, REL + 0.04)); }
-          const pinch = t > 0.35 && t < REL;
-          P.hand.L = pinch ? { c: [0.25, 0.3, 0.95, 1], th: 0.75, sp: 0.55 } // 人差し指と中指を開いて刃を挟む
-            : t < 0.35 ? { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 } : { c: [0.2, 0.25, 0.3, 0.35], th: 0.3, sp: 0.5 };
-          // 刀のしなり: 溜めで増え、離すと逆へ弾けて減衰しながら震える
-          let bend;
-          if (t < REL) bend = -(0.55 * charge + 0.015 * charge * Math.sin(t * 70));
-          else { const v = t - REL; bend = -0.55 * Math.cos(v * 2 * Math.PI * 7) * Math.exp(-v / 0.09); }
-          ctx.katanaBendTarget = bend; ctx.katanaBendLive = 3;
+          if (t < REL) seq(P, t, [[0, 'guard'], [0.6, 'ryuseiSet'], [REL, 'ryuseiSet']]);
+          else seq(P, t, [[REL, 'ryuseiSet'], [2.5, 'ryuseiSet'], [3.2, 'guard']]);
+          if (t >= REL && t < 2.5) {
+            const u = 1 - Math.pow(1 - Math.min(1, (t - REL) / SWING), 2), bm = Math.sin(Math.PI * u); // 離した直後が最も速い
+            const A = POSES.ryuseiSet.j, B = POSES.ryuseiCut.j;
+            P.j.shoulder_R = [A.shoulder_R[0] + (B.shoulder_R[0] - A.shoulder_R[0]) * u - 8 * bm, A.shoulder_R[1] + (B.shoulder_R[1] - A.shoulder_R[1]) * u, A.shoulder_R[2]];
+            P.j.elbow_R = [A.elbow_R[0] + (B.elbow_R[0] - A.elbow_R[0]) * u - 12 * bm, 0, 0];
+            P.hand.L = h.blendHand(POSES.ryuseiSet.hand.L, h.HANDS.open, Math.min(1, (t - REL) / 0.08));
+          }
+          if (t < 0.4) twoHands(P); // 構えに入るまでは両手持ち
+          // 溜め: 腰をわずかに沈める
+          if (t < REL) P.root[1] -= 0.03 * charge;
+          // 刀のしなり: 溜めは両端を止めた弓なり(切っ先は指の間から動かない)、離すと先が自由になって震えながら戻る
+          if (t < REL) { ctx.katanaBendMode = 'bow'; ctx.katanaBendTarget = 0.05 * charge + 0.002 * charge * Math.sin(t * 70); }
+          else { const v = t - REL; ctx.katanaBendMode = 'arc'; ctx.katanaBendTarget = -0.35 * Math.cos(v * 2 * Math.PI * 7) * Math.exp(-v / 0.09); }
+          ctx.katanaBendLive = 3;
           P.trail = t > REL - 0.01 && t < REL + 0.3 ? 1 : 0;
           if (t > 0.5 && t < 2.6) mood('angry');
-          P.look = t < REL ? 0.4 : 0;
+          P.look = 0;
         },
         // 斬撃: 上段から踏み込んで斬り下ろす
         slash: (P, t) => {
@@ -577,7 +558,7 @@
       // 刀のしなり(流れ星の間だけ。終われば真っすぐに戻す)
       const live = ctx.katanaBendLive > 0;
       ctx.katanaBendLive = Math.max(0, (ctx.katanaBendLive || 0) - 1);
-      ctx.bendKatana(live ? ctx.katanaBendTarget : 0);
+      ctx.bendKatana(live ? ctx.katanaBendTarget : 0, live ? ctx.katanaBendMode : 'arc');
       updateShuriken(ctx, dt);
     },
 
