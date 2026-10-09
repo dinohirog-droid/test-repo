@@ -105,13 +105,13 @@
       },
       feet: { L: [0.12, 0.2, 20], R: [-0.13, -0.14, -25, 0, 12] },
     },
-    // 流れ星(構え): 両手とも高く。左手は左肩の外で切っ先を人差し指と中指で挟み(指を鞘の代わりにする)、
-    // 柄は胸の右前。刀は胸の前を左上へ渡る。上体はやや左へひねって溜める。右腕は腕 IK で決まる
+    // 流れ星(構え): 柄は胸の高さの右前、刀は体の前を左上へ斜めに。左手は左上に高く上げ、峰の側から切っ先を包んで
+    // 人差し指と中指で挟む(指を鞘の代わりにする)。上体はやや左へひねって溜める。両腕は腕 IK で決まる
     ryuseiSet: {
       root: [0, -0.15, 0],
       j: {
         hips: [6, 6, 0], spine: [6, 4, 0], chest: [4, 4, 0], neck: [-8, -8, 0], head: [-8, -6, 0],
-        shoulder_L: [-95, 30, 55], elbow_L: [-95, 0, 0], forearm_L: [0, -30, 0], wrist_L: [0, 0, 0],
+        shoulder_L: [-130, 20, 40], elbow_L: [-50, 0, 0], forearm_L: [0, -30, 0], wrist_L: [0, 0, 0],
       },
       feet: { L: [0.15, 0.17, 25], R: [-0.15, -0.18, -35] },
     },
@@ -377,9 +377,9 @@
       const trail = { base: V3(0, 0.15, 0), tip: V3(sori(1), 0.095 + L, 0) };
       ctx.items.R = { name: 'katana', obj: katana, trail };
       // 刀身のしなり(流れ星): はばきから先を弓なりに曲げる。軌跡の刃先と、切っ先をつまむ左手の目標も一緒に動かす
-      const bender = U.makeBender(katana, [bladeMesh, hamonMesh], 0.095, L);
+      const bender = U.makeBender(katana, [bladeMesh, hamonMesh], 0.095, L, 'x'); // 刃の向きへしならせる(横薙ぎの面内)
       const tip0 = trail.tip.clone(), pinch0 = V3(sori(0.9), 0.095 + L * 0.9, 0);
-      const tipReach = new THREE.Object3D(); // 切っ先をつまむ位置。Y(手の甲の向き)= 切っ先の向き、X = 刃の幅の向き
+      const tipReach = new THREE.Object3D(); // 切っ先をつまむ位置。峰の側から包み、人差し指と中指の間で挟む
       katana.add(tipReach);
       ctx.reach.katanaTip = tipReach;
       const _t = V3(0, 0, 0), _x = V3(1, 0, 0), _z = V3(0, 0, 0), _m4 = new THREE.Matrix4();
@@ -389,8 +389,10 @@
         bender.point(pinch0, tipReach.position);
         bender.tangent(pinch0, _t);
         tipReach.position.addScaledVector(_t, -0.035); // 指の間を刃が抜け、切っ先が手の甲の先に少し出る
-        _z.crossVectors(_x, _t);
-        tipReach.quaternion.setFromRotationMatrix(_m4.makeBasis(_x, _t, _z));
+        _x.set(-_t.y, _t.x, 0); // 峰(刃の反対側)の向き(しなりで傾く)
+        _z.crossVectors(_t, _x);
+        // 腕 IK の目標: X = 握る棒の向き(刀身)、Y = 手の甲の向き(峰の側)。手のひらを峰に当てて上から包み、刃には触れない
+        tipReach.quaternion.setFromRotationMatrix(_m4.makeBasis(_t, _x, _z));
       };
       ctx.bendKatana(0);
       ctx.reach.ryuseiR = new THREE.Object3D(); // 流れ星で右手を動かす目標(体の空間)
@@ -445,22 +447,22 @@
     modes(h) {
       const { fromStatic, breathe, addJ, seq, clamp, ctx, air, squat, mood, win, bump } = h;
       // 右手の目標(腕 IK)を、刀が「胸の高さ・半径 r の円の上の手の位置 handDeg」から「刃の向き bladeDeg・仰角 elevDeg」を向くように置く。
-      // 角度は体の正面から左回り(度)。刃(刃先の側)は振る向き(sweep: +1 左回り / -1 右回り)へ向ける
+      // 角度は体の正面から左回り(度)。刃(刃先の側)は振る向き(sweep: +1 左回り / -1 右回り)へ、edgeDown(0〜1)だけ下へ向ける
       const _q1 = new ctx.THREE.Quaternion(), _qa = new ctx.THREE.Quaternion(), _m1 = new ctx.THREE.Matrix4();
       const _b = new ctx.THREE.Vector3(), _e = new ctx.THREE.Vector3(), _z = new ctx.THREE.Vector3();
       const MQ = new ctx.THREE.Quaternion().setFromRotationMatrix(new ctx.THREE.Matrix4().makeBasis(
         new ctx.THREE.Vector3(0, 0, 1), new ctx.THREE.Vector3(-1, 0, 0), new ctx.THREE.Vector3(0, -1, 0)));
       let relInv = null; // 手首 → 刀 の向きの逆(手の作りで決まる定数。最初に一度だけ測る)
-      const aimKatana = (P, handDeg, bladeDeg, elevDeg, r, sweep) => {
+      const aimKatana = (P, handDeg, bladeDeg, elevDeg, r, sweep, yOff, edgeDown) => {
         if (!relInv) {
           const wq = ctx.J.wrist_R.getWorldQuaternion(new ctx.THREE.Quaternion()), kq = ctx.items.R.obj.getWorldQuaternion(new ctx.THREE.Quaternion());
           relInv = wq.invert().multiply(kq).invert();
         }
         const ha = handDeg * Math.PI / 180, ba = bladeDeg * Math.PI / 180, el = elevDeg * Math.PI / 180;
         const tg = ctx.reach.ryuseiR;
-        tg.position.set(Math.sin(ha) * r, 1.25 + P.root[1], 0.02 + Math.cos(ha) * r);
+        tg.position.set(Math.sin(ha) * r, 1.25 + (yOff || 0) + P.root[1], 0.02 + Math.cos(ha) * r);
         _b.set(Math.sin(ba) * Math.cos(el), Math.sin(el), Math.cos(ba) * Math.cos(el));
-        _e.set(Math.cos(ba) * sweep, 0, -Math.sin(ba) * sweep); _e.addScaledVector(_b, -_e.dot(_b)).normalize(); // 刃の向き = 振る向き
+        _e.set(Math.cos(ba) * sweep * (1 - (edgeDown || 0)), -(edgeDown || 0), -Math.sin(ba) * sweep * (1 - (edgeDown || 0))); _e.addScaledVector(_b, -_e.dot(_b)).normalize(); // 刃の向き = 振る向き
         _z.crossVectors(_e, _b);
         _q1.setFromRotationMatrix(_m1.makeBasis(_e, _b, _z)); // 刀の向き(体の空間)
         // 腕 IK は目標の X = 握る棒の向き、Y = 手の甲の向きで手首を決める。刀の向きから逆算する
@@ -506,9 +508,9 @@
           const REL = 1.6, SWING = 0.16, charge = win(t, 0.6, 1.55);
           // 溜め: 腰を沈めてさらにひねる
           if (t < REL) { P.root[1] -= 0.04 * charge; addJ(P, 'chest', 0, 6 * charge); }
-          // 右手: 構え(胸の右前・刃は左上へ)から、離した瞬間に切っ先が左手から前へ飛び出し、正面を通って右へ振り抜く
+          // 右手: 構え(胸の高さの右前・刃は左上へ斜めに、刃は下向き)から、離した瞬間に斜めがほどけて水平になり、正面を通って右へ振り抜く
           const u = t < REL ? 0 : 1 - Math.pow(1 - Math.min(1, (t - REL) / SWING), 2); // 離した直後が最も速い
-          aimKatana(P, -50 + 10 * u, 58 - 128 * u, 9 - 3 * u, 0.24 + 0.2 * u, -1);
+          aimKatana(P, -40 - 2 * u, 84 - 154 * u, 30 - 24 * Math.min(1, u * 1.6), 0.3 + 0.15 * u, -1, -0.1, 1 - Math.min(1, u * 2.5));
           P.reach.R = 'ryuseiR'; P.reachW.R = win(t, 0, 0.5) * (1 - win(t, 2.5, 3.1));
           // 左手: はじめは柄(両手持ち)、構えで切っ先へ移り、離す瞬間に放す
           if (t < 0.4) { P.reach.L = 'katanaGrip'; P.reachW.L = 1 - win(t, 0.1, 0.4); }
@@ -518,8 +520,8 @@
             : t < 0.35 ? { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 } : { c: [0.2, 0.25, 0.3, 0.35], th: 0.3, sp: 0.5 };
           // 刀のしなり: 溜めで増え、離すと逆へ弾けて減衰しながら震える
           let bend;
-          if (t < REL) bend = 0.68 * charge + 0.015 * charge * Math.sin(t * 70);
-          else { const v = t - REL; bend = 0.68 * Math.cos(v * 2 * Math.PI * 7) * Math.exp(-v / 0.09); }
+          if (t < REL) bend = -(0.55 * charge + 0.015 * charge * Math.sin(t * 70));
+          else { const v = t - REL; bend = -0.55 * Math.cos(v * 2 * Math.PI * 7) * Math.exp(-v / 0.09); }
           ctx.katanaBendTarget = bend; ctx.katanaBendLive = 3;
           P.trail = t > REL - 0.01 && t < REL + 0.3 ? 1 : 0;
           if (t > 0.5 && t < 2.6) mood('angry');

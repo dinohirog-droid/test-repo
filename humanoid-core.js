@@ -142,7 +142,8 @@
     // 刀身などを弓なりにしならせる(頂点を CPU で曲げる。輪郭線は同じ形状を使うので一緒に曲がる)。
     // group の座標で y = start から先(長さ len)を、z の向きへ全体で theta ラジアン曲げる。
     // 戻り値 bend(theta) で曲げ、bend.point(p) で曲げた後の位置、bend.tangent(p) で刃の向きを得る
-    U.makeBender = (group, meshes, start, len) => {
+    U.makeBender = (group, meshes, start, len, axis) => {
+      const AX = axis === 'x'; // 'x' なら x の向きへ曲げる(刃の向き)。既定は z(刀身の平らな面の向き)
       const v = V3(0, 0, 0);
       const recs = meshes.map((m) => {
         m.updateMatrix();
@@ -153,10 +154,11 @@
       });
       let cur = 0;
       const map = (x, y, z, th, out) => {
-        const s = y - start;
+        const s = y - start, c = AX ? x : z;
         if (Math.abs(th) < 1e-5 || s <= 0) return out.set(x, y, z);
-        const k = th / len, a = k * s; // 中心線 (y, z) = (start + sin a / k, (1 - cos a) / k)、法線 = (-sin a, cos a)
-        return out.set(x, start + Math.sin(a) / k - z * Math.sin(a), (1 - Math.cos(a)) / k + z * Math.cos(a));
+        const k = th / len, a = k * s; // 中心線 (y, c) = (start + sin a / k, (1 - cos a) / k)、法線 = (-sin a, cos a)
+        const ny = start + Math.sin(a) / k - c * Math.sin(a), nc = (1 - Math.cos(a)) / k + c * Math.cos(a);
+        return AX ? out.set(nc, ny, z) : out.set(x, ny, nc);
       };
       function bend(th) {
         if (Math.abs(th - cur) < 1e-4) return;
@@ -170,7 +172,7 @@
         });
       }
       bend.point = (p, out) => map(p.x, p.y, p.z, cur, out || V3(0, 0, 0));
-      bend.tangent = (p, out) => { const a = Math.max(0, p.y - start) * cur / len; return (out || V3(0, 0, 0)).set(0, Math.cos(a), Math.sin(a)); };
+      bend.tangent = (p, out) => { const a = Math.max(0, p.y - start) * cur / len; return AX ? (out || V3(0, 0, 0)).set(Math.sin(a), Math.cos(a), 0) : (out || V3(0, 0, 0)).set(0, Math.cos(a), Math.sin(a)); };
       bend.get = () => cur;
       return bend;
     };

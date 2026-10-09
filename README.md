@@ -160,7 +160,7 @@ const SPEC = {
 const blackKnight = HumanoidCore.create(THREE, scene, {}, SPEC);
 ```
 
-共通基盤のヘルパー(`modes(h)` の `h`)には `gait`(歩行の仕組み。`WALK` / `RUN` を元に速さ・歩幅・腰の低さを変えて使える)、`freeArm`、`seq` などがあります。ポーズの `flip`(度)で腰を中心に前へ回ります(宙返り)。`U.makeBender(group, meshes, start, len)` で刀身などを弓なりにしならせられます(輪郭線も一緒に曲がります)。
+共通基盤のヘルパー(`modes(h)` の `h`)には `gait`(歩行の仕組み。`WALK` / `RUN` を元に速さ・歩幅・腰の低さを変えて使える)、`freeArm`、`seq` などがあります。ポーズの `flip`(度)で腰を中心に前へ回ります(宙返り)。`U.makeBender(group, meshes, start, len, axis)` で刀身などを弓なりにしならせられます(axis: `z` = 平らな面の向き(既定)、`x` = 刃の向き。輪郭線も一緒に曲がります)。
 
 手足の長さを変えたいときは `joints.base` / `joints.side`(関節表)を書き換えます。IK は骨の長さを関節の位置から読むので、そのまま動きます。腕の静止ポーズは `tools/optimize-arms.mjs` で出し直せます。
 
