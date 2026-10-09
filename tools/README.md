@@ -60,3 +60,12 @@ node optimize-arms.mjs targets/cyber-knight-arms.json --pose guard --side L
 - `avoid`: 関節の近くに入り込まないための罰則です(盾が胸にめり込まないように、など)
 
 体格や持ち物を変えたら、まずこれで腕の角度を出し直し、撮影して確かめるのが近道です。
+
+## モード切り替えの総当たり検査 `check-modes.mjs`
+
+```sh
+node check-modes.mjs 'index.html?char=kunoichi'
+node check-modes.mjs index.html
+```
+
+すべての「モード A → モード B」(技は次のモードへ戻るところまで)を実行し、関節の値が壊れていないか、前のモードの手の目標(腕 IK)が残っていないかを確かめます。問題があれば終了コード 3 です。共通基盤を変えたら、見た目の比較と合わせて全キャラで流してください。
