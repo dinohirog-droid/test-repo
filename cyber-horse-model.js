@@ -543,6 +543,10 @@
         meterTex, drawMeter, flames, materials: M, COLORS,
         update, setSteer, setLean, setBoost, setColor, getColor: () => colorId, setOutline,
         getSpeed: () => speed, wheelRadius: WHEEL_R,
+        // 乗り手の前傾姿勢と、マントがシート・テール・後輪を突き抜けないための球(乗り手の ride() が読む)
+        riderStyle: { hips: [24, 0, 0], spine: [14, 0, 0], chest: [8, 0, 0], neck: [-16, 0, 0], head: [-20, 0, 0], kneeOut: 0, seatLift: 0.12 },
+        riderColliders: [[-0.7, 0.42], [-1.2, 0.42], [-1.7, 0.4], [-2.2, 0.32]].map((z) => ({ obj: chassis, c: [0, 2.12, z[0]], r: z[1] }))
+          .concat([{ obj: chassis, c: [0, 0.95, -1.95], r: 1.0 }]),
       };
     },
   };
