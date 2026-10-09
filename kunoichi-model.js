@@ -105,6 +105,36 @@
       },
       feet: { L: [0.12, 0.2, 20], R: [-0.13, -0.14, -25, 0, 12] },
     },
+    // 流れ星(構え): 柄を右腰に低く、刀は体の前を斜めに。切っ先を左手の人差し指と中指で挟み、上体を左へひねって溜める
+    ryuseiSet: {
+      root: [0, -0.15, 0],
+      j: {
+        hips: [6, 12, 0], spine: [6, 8, 0], chest: [4, 10, 0], neck: [-8, -14, 0], head: [-8, -10, 0],
+        shoulder_L: [-60, 30, 50], elbow_L: [-100, 0, 0], forearm_L: [0, -30, 0], wrist_L: [0, 0, 0],
+        shoulder_R: [22, -4, -10], elbow_R: [-101, 0, 0], forearm_R: [0, 23, 0], wrist_R: [4, 0, 0],
+      },
+      feet: { L: [0.15, 0.17, 25], R: [-0.15, -0.18, -35] },
+    },
+    // 流れ星(振り抜きの途中): 刃は正面、胸の高さ
+    ryuseiMid: {
+      root: [0, -0.17, 0.02],
+      j: {
+        hips: [6, 0, 0], spine: [6, -6, 0], chest: [4, -8, 0], neck: [-8, 6, 0], head: [-6, 4, 0],
+        shoulder_L: [10, 0, 45], elbow_L: [-30, 0, 0],
+        shoulder_R: [-70, 27, 20], elbow_R: [-65, 0, 0], forearm_R: [0, 90, 0], wrist_R: [75, 21, 0],
+      },
+      feet: { L: [0.15, 0.17, 25], R: [-0.15, -0.18, -35] },
+    },
+    // 流れ星(残心): 右へ振り抜き、刃は水平に右前。左腕は後ろへ開く
+    ryuseiCut: {
+      root: [0, -0.2, 0.03],
+      j: {
+        hips: [6, -18, 0], spine: [6, -14, 0], chest: [4, -16, 0], neck: [-8, 22, 0], head: [-6, 18, 0],
+        shoulder_L: [25, 0, 60], elbow_L: [-20, 0, 0],
+        shoulder_R: [-95, -3, 40], elbow_R: [0, 0, 0], forearm_R: [0, -22, 0], wrist_R: [75, -23, 0],
+      },
+      feet: { L: [0.15, 0.2, 25], R: [-0.17, -0.18, -40, 0, 10] },
+    },
     stealth: {
       root: [0, -0.3, 0],
       j: {
@@ -346,16 +376,34 @@
       for (let i = 1; i <= 20; i++) { const t = i / 20; bl.lineTo(-0.011 + sori(t) - (t > 0.93 ? (t - 0.93) * 0.1 : 0), t * L); }
       bl.lineTo(0.004 + sori(1) + 0.006, L * 0.985);
       for (let i = 20; i >= 0; i--) { const t = i / 20; bl.lineTo(0.012 - t * 0.002 + sori(t), t * L * (t > 0.95 ? 0.985 : 1)); }
-      add(katana, U.extrude(bl, 0.003, 0.0015, 4), M.katana, [0, 0.095, 0]);
+      const bladeMesh = add(katana, U.extrude(bl, 0.003, 0.0015, 4), M.katana, [0, 0.095, 0]);
       const hamon = [];
       for (let i = 0; i <= 18; i++) { const t = i / 18 * 0.93; hamon.push([0.006 + sori(t) - 0.003 * Math.sin(t * 40), 0.095 + t * L, 0.0026]); }
-      add(katana, U.surfaceLine(hamon, 0.0011), M.hamon);
+      const hamonMesh = add(katana, U.surfaceLine(hamon, 0.0011), M.hamon);
       const reach = new THREE.Object3D(); // 左手を添える位置(両手持ち)。X = 柄の向き(刃と逆)、Y = 手の甲の向き
       reach.position.set(0, -0.12, 0);
       reach.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(V3(0, -1, 0), V3(-1, 0, 0), V3(0, 0, -1)));
       katana.add(reach);
       ctx.reach.katanaGrip = reach;
-      ctx.items.R = { name: 'katana', obj: katana, trail: { base: V3(0, 0.15, 0), tip: V3(sori(1), 0.095 + L, 0) } };
+      const trail = { base: V3(0, 0.15, 0), tip: V3(sori(1), 0.095 + L, 0) };
+      ctx.items.R = { name: 'katana', obj: katana, trail };
+      // 刀身のしなり(流れ星): はばきから先を弓なりに曲げる。軌跡の刃先と、切っ先をつまむ左手の目標も一緒に動かす
+      const bender = U.makeBender(katana, [bladeMesh, hamonMesh], 0.095, L);
+      const tip0 = trail.tip.clone(), pinch0 = V3(sori(0.9), 0.095 + L * 0.9, 0);
+      const tipReach = new THREE.Object3D(); // 切っ先をつまむ位置。Y(手の甲の向き)= 切っ先の向き、X = 刃の幅の向き
+      katana.add(tipReach);
+      ctx.reach.katanaTip = tipReach;
+      const _t = V3(0, 0, 0), _x = V3(1, 0, 0), _z = V3(0, 0, 0), _m4 = new THREE.Matrix4();
+      ctx.bendKatana = (th) => {
+        bender(th);
+        bender.point(tip0, trail.tip);
+        bender.point(pinch0, tipReach.position);
+        bender.tangent(pinch0, _t);
+        tipReach.position.addScaledVector(_t, -0.035); // 指の間を刃が抜け、切っ先が手の甲の先に少し出る
+        _z.crossVectors(_x, _t);
+        tipReach.quaternion.setFromRotationMatrix(_m4.makeBasis(_x, _t, _z));
+      };
+      ctx.bendKatana(0);
 
       // 腰の鞘(左)と背の短刀
       const saya = new THREE.Group();
@@ -436,6 +484,29 @@
           if (t > 0.2 && t < 1.7) mood('angry');
           P.look = 0;
         },
+        // 流れ星(虎眼流の奥義に倣った技): 切っ先を左手の指で挟んで刀身をしならせ、溜めた力を離して横薙ぎの一閃
+        //   0〜0.6 構えへ / 0.6〜1.6 溜め(しなりが増し、刀が震える)/ 1.6 離す / 〜1.78 一閃 / 〜2.5 残心 / 〜3.2 構えへ戻る
+        ryusei: (P, t) => {
+          seq(P, t, [[0, 'guard'], [0.6, 'ryuseiSet'], [1.6, 'ryuseiSet'], [1.68, 'ryuseiMid'], [1.78, 'ryuseiCut'], [2.5, 'ryuseiCut'], [3.2, 'guard']]);
+          const REL = 1.6, charge = win(t, 0.6, 1.55);
+          // 溜め: 腰を沈めてさらにひねる
+          P.root[1] -= 0.04 * charge * (t < REL ? 1 : 0);
+          addJ(P, 'chest', 0, 6 * charge * (t < REL ? 1 : 0));
+          // 左手: はじめは柄(両手持ち)、構えで切っ先へ移り、離す瞬間に放す
+          if (t < 0.4) { P.reach.L = 'katanaGrip'; P.reachW.L = 1 - win(t, 0.1, 0.4); }
+          else { P.reach.L = 'katanaTip'; P.reachW.L = win(t, 0.35, 0.6) * (1 - win(t, REL, REL + 0.04)); }
+          const pinch = t > 0.35 && t < REL;
+          P.hand.L = pinch ? { c: [0.25, 0.3, 0.95, 1], th: 0.75, sp: 0.55 } // 人差し指と中指を開いて刃を挟む
+            : t < 0.35 ? { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 } : { c: [0.2, 0.25, 0.3, 0.35], th: 0.3, sp: 0.5 };
+          // 刀のしなり: 溜めで増え、離すと逆へ弾けて減衰しながら震える
+          let bend;
+          if (t < REL) bend = 0.68 * charge + 0.015 * charge * Math.sin(t * 70);
+          else { const u = t - REL; bend = 0.68 * Math.cos(u * 2 * Math.PI * 7) * Math.exp(-u / 0.09); }
+          ctx.katanaBendTarget = bend; ctx.katanaBendLive = 3;
+          P.trail = t > REL - 0.02 && t < REL + 0.3 ? 1 : 0;
+          if (t > 0.5 && t < 2.6) mood('angry');
+          P.look = t < REL ? 0.4 : 0;
+        },
         // 斬撃: 上段から踏み込んで斬り下ろす
         slash: (P, t) => {
           seq(P, t, [[0, 'guard'], [0.32, 'jodan'], [0.42, 'jodan'], [0.62, 'slashLow'], [0.9, 'slashLow'], [1.35, 'guard']]);
@@ -458,6 +529,7 @@
     actions: {
       airAttack: { dur: 2.1, next: 'guard', blend: 0.2 },
       slash: { dur: 1.35, next: 'guard', blend: 0.2 },
+      ryusei: { dur: 3.2, next: 'guard', blend: 0.2 },
       shuriken: { dur: 1.45, next: 'idle', blend: 0.2 },
     },
 
@@ -482,6 +554,10 @@
     },
 
     update(ctx, dt) {
+      // 刀のしなり(流れ星の間だけ。終われば真っすぐに戻す)
+      const live = ctx.katanaBendLive > 0;
+      ctx.katanaBendLive = Math.max(0, (ctx.katanaBendLive || 0) - 1);
+      ctx.bendKatana(live ? ctx.katanaBendTarget : 0);
       updateShuriken(ctx, dt);
     },
 
@@ -536,12 +612,12 @@
       desc: '月夜に紛れる女忍。フードとマスクで顔を覆い、大きな目だけを見せる。6.5頭身・156cm。刀(構えは両手持ち)・破れ裾のマント・前髪とマフラーの物理',
       create: 'create(THREE, parent, options) → { root, setMode, update, setColor, setExpr, ... }',
       requires: ['humanoid-core.js'],
-      modes: ['idle', 'guard', 'stealth', 'walk', 'run', 'jump', 'airAttack', 'slash', 'shuriken'],
+      modes: ['idle', 'guard', 'stealth', 'walk', 'run', 'jump', 'airAttack', 'slash', 'shuriken', 'ryusei'],
       expressions: ['normal', 'surprise', 'angry', 'smile', 'sad'],
       colors: Object.keys(COLORS),
       height: 1.56,
       modeLabels: { idle: '待機', guard: '構え', stealth: '隠密', walk: '歩く', run: '走る' },
-      actionLabels: { jump: '跳躍', airAttack: '空中攻撃', slash: '斬撃', shuriken: '手裏剣' },
+      actionLabels: { jump: '跳躍', airAttack: '空中攻撃', slash: '斬撃', shuriken: '手裏剣', ryusei: '流れ星' },
       expressionLabels: { normal: '通常', surprise: '驚き', angry: '怒り', smile: '笑い', sad: '悲しみ' },
       irisStyleLabels: { normal: '瞳: 通常', sparkle: '瞳: 星空', magic: '瞳: 魔法陣' },
       irisStyles: ['normal', 'sparkle', 'magic'],

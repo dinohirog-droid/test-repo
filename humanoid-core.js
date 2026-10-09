@@ -139,6 +139,41 @@
       return (capCache[key] = new THREE.LatheGeometry(pts, 20));
     };
     // ある関節の空間で、配下の形状すべてを点の関数で変形する(兜を尖らせる等)
+    // 刀身などを弓なりにしならせる(頂点を CPU で曲げる。輪郭線は同じ形状を使うので一緒に曲がる)。
+    // group の座標で y = start から先(長さ len)を、z の向きへ全体で theta ラジアン曲げる。
+    // 戻り値 bend(theta) で曲げ、bend.point(p) で曲げた後の位置、bend.tangent(p) で刃の向きを得る
+    U.makeBender = (group, meshes, start, len) => {
+      const v = V3(0, 0, 0);
+      const recs = meshes.map((m) => {
+        m.updateMatrix();
+        const mm = m.matrix.clone(), mi = mm.clone().invert(), pa = m.geometry.attributes.position;
+        const orig = new Float32Array(pa.count * 3);
+        for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(mm); orig[i * 3] = v.x; orig[i * 3 + 1] = v.y; orig[i * 3 + 2] = v.z; }
+        return { m, mi, pa, orig };
+      });
+      let cur = 0;
+      const map = (x, y, z, th, out) => {
+        const s = y - start;
+        if (Math.abs(th) < 1e-5 || s <= 0) return out.set(x, y, z);
+        const k = th / len, a = k * s; // 中心線 (y, z) = (start + sin a / k, (1 - cos a) / k)、法線 = (-sin a, cos a)
+        return out.set(x, start + Math.sin(a) / k - z * Math.sin(a), (1 - Math.cos(a)) / k + z * Math.cos(a));
+      };
+      function bend(th) {
+        if (Math.abs(th - cur) < 1e-4) return;
+        cur = th;
+        recs.forEach((r) => {
+          const o = r.orig;
+          for (let i = 0; i < r.pa.count; i++) { map(o[i * 3], o[i * 3 + 1], o[i * 3 + 2], th, v).applyMatrix4(r.mi); r.pa.setXYZ(i, v.x, v.y, v.z); }
+          r.pa.needsUpdate = true;
+          r.m.geometry.computeVertexNormals();
+          r.m.geometry.computeBoundingSphere();
+        });
+      }
+      bend.point = (p, out) => map(p.x, p.y, p.z, cur, out || V3(0, 0, 0));
+      bend.tangent = (p, out) => { const a = Math.max(0, p.y - start) * cur / len; return (out || V3(0, 0, 0)).set(0, Math.cos(a), Math.sin(a)); };
+      bend.get = () => cur;
+      return bend;
+    };
     U.deformUnder = (rootObj, space, fn, skip) => {
       rootObj.updateMatrixWorld(true);
       const toSpace = new THREE.Matrix4().copy(space.matrixWorld).invert();
@@ -1216,7 +1251,7 @@
       // 幅は刃先から WIDTH(刃の長さに対する割合)だけの細い帯で、刃先側ほど明るく、根元側は透明へ消える
       const trailItem = ['R', 'L'].map((s) => items[s] && items[s].trail && { s, it: items[s] }).filter(Boolean)[0];
       const trail = trailItem && (function () {
-        const n = 32, LIFE = 0.22, samples = [], color = GLOWC;
+        const n = 48, LIFE = 0.22, samples = [], color = GLOWC;
         const WIDTH = spec.trailWidth !== undefined ? spec.trailWidth : 0.22, GAIN = spec.trailGain !== undefined ? spec.trailGain : 0.75;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
@@ -1228,6 +1263,21 @@
         mesh.frustumCulled = false;
         fx.add(mesh);
         const base = trailItem.it.trail.base, tip = trailItem.it.trail.tip;
+        // サンプルの間をなめらかにつなぐ(速い振りでも折れ線にならない): Catmull-Rom 補間
+        const _s = { b: V3(0, 0, 0), t: V3(0, 0, 0), s: 0, time: 0 };
+        const cr = (out, p0, p1, p2, p3, u) => {
+          const u2 = u * u, u3 = u2 * u;
+          return out.set(0, 0, 0)
+            .addScaledVector(p0, -0.5 * u3 + u2 - 0.5 * u).addScaledVector(p1, 1.5 * u3 - 2.5 * u2 + 1)
+            .addScaledVector(p2, -1.5 * u3 + 2 * u2 + 0.5 * u).addScaledVector(p3, 0.5 * u3 - 0.5 * u2);
+        };
+        function sampleAt(f) {
+          const last = samples.length - 1, i = Math.min(Math.floor(f), Math.max(0, last - 1)), u = Math.min(1, f - i);
+          const a = samples[Math.max(0, i - 1)], b = samples[i], c = samples[Math.min(last, i + 1)], d = samples[Math.min(last, i + 2)];
+          cr(_s.b, a.b, b.b, c.b, d.b, u); cr(_s.t, a.t, b.t, c.t, d.t, u);
+          _s.s = b.s + (c.s - b.s) * u; _s.time = b.time + (c.time - b.time) * u;
+          return _s;
+        }
         function update(strength, time) {
           const sm = toFx(trailItem.it.obj);
           const bt = base.clone().applyMatrix4(sm), tt = tip.clone().applyMatrix4(sm);
@@ -1235,7 +1285,7 @@
           while (samples.length > 2 && (samples.length > n * 4 || time - samples[0].time > LIFE)) samples.shift();
           const pos = geo.attributes.position.array, col = geo.attributes.color.array;
           for (let i = 0; i < n; i++) {
-            const smp = samples[Math.round((i / (n - 1)) * (samples.length - 1))];
+            const smp = sampleAt((i / (n - 1)) * (samples.length - 1));
             const age = 1 - Math.min(1, (time - smp.time) / LIFE), k = smp.s * age * age * GAIN, o = i * 6;
             pos[o] = smp.b.x; pos[o + 1] = smp.b.y; pos[o + 2] = smp.b.z; pos[o + 3] = smp.t.x; pos[o + 4] = smp.t.y; pos[o + 5] = smp.t.z;
             col[o] = 0; col[o + 1] = 0; col[o + 2] = 0; // 根元側の縁は透明(加算合成なので黒 = 見えない)
