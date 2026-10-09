@@ -209,4 +209,5 @@ const blackKnight = HumanoidCore.create(THREE, scene, {}, SPEC);
 | `pose-editor.html` | ポーズ編集(関節・指・腕 IK・キーフレーム・書き出し) |
 | `examples/r128.html` | r128 への組み込み例(モーション巡回 + バイク + 天馬) |
 | `neon-stage.html` | ネオン街を走るステージ |
-| `tools/` | 撮影・比較・腕ポーズ自動調整 |
+| `tools/` | 撮影・比較・腕ポーズ自動調整・モード総当たり検査 |
+| `HANDOVER.md` | 引き継ぎ資料(全体像・約束ごと・変更手順・残りの課題) |
