@@ -474,6 +474,7 @@
      *   update(ctx, dt, time, pose)        毎フレームの追加処理
      *   handStyle: { scale, armor, cuff, glow, glove, knuckle, plate }  標準の手の作り
      *   face: true | { draw, expressions, irisStyles, iris, width, height, res }  キャンバスに描く目(M.eyes を貼る形状はキャラが作る)
+     *   trailWidth(既定 0.22)/ trailGain(既定 0.75)  武器の軌跡の幅(刃の長さに対する割合)と明るさ
      *   jump: { height, flip, tuck } | false  共通の跳躍(既定 高さ 0.75 m・前宙 360°)
      */
     create(THREE, parentNode, options, spec) {
@@ -1211,10 +1212,12 @@
         });
       }
 
-      // 武器の軌跡: 刃の根元と先端の直近 LIFE 秒からリボンを描く(フレームレートに依存しない)
+      // 武器の軌跡: 刃先の直近 LIFE 秒からリボンを描く(フレームレートに依存しない)。
+      // 幅は刃先から WIDTH(刃の長さに対する割合)だけの細い帯で、刃先側ほど明るく、根元側は透明へ消える
       const trailItem = ['R', 'L'].map((s) => items[s] && items[s].trail && { s, it: items[s] }).filter(Boolean)[0];
       const trail = trailItem && (function () {
         const n = 32, LIFE = 0.22, samples = [], color = GLOWC;
+        const WIDTH = spec.trailWidth !== undefined ? spec.trailWidth : 0.22, GAIN = spec.trailGain !== undefined ? spec.trailGain : 0.75;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
         geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
@@ -1227,15 +1230,16 @@
         const base = trailItem.it.trail.base, tip = trailItem.it.trail.tip;
         function update(strength, time) {
           const sm = toFx(trailItem.it.obj);
-          samples.push({ b: base.clone().applyMatrix4(sm), t: tip.clone().applyMatrix4(sm), s: equip[trailItem.s] ? strength : 0, time });
+          const bt = base.clone().applyMatrix4(sm), tt = tip.clone().applyMatrix4(sm);
+          samples.push({ b: tt.clone().lerp(bt, WIDTH), t: tt, s: equip[trailItem.s] ? strength : 0, time });
           while (samples.length > 2 && (samples.length > n * 4 || time - samples[0].time > LIFE)) samples.shift();
           const pos = geo.attributes.position.array, col = geo.attributes.color.array;
           for (let i = 0; i < n; i++) {
             const smp = samples[Math.round((i / (n - 1)) * (samples.length - 1))];
-            const age = 1 - Math.min(1, (time - smp.time) / LIFE), k = smp.s * age * age, o = i * 6;
+            const age = 1 - Math.min(1, (time - smp.time) / LIFE), k = smp.s * age * age * GAIN, o = i * 6;
             pos[o] = smp.b.x; pos[o + 1] = smp.b.y; pos[o + 2] = smp.b.z; pos[o + 3] = smp.t.x; pos[o + 4] = smp.t.y; pos[o + 5] = smp.t.z;
-            col[o] = color.r * k * 0.3; col[o + 1] = color.g * k * 0.3; col[o + 2] = color.b * k * 0.3;
-            col[o + 3] = color.r * k * 2.2; col[o + 4] = color.g * k * 2.2; col[o + 5] = color.b * k * 2.2;
+            col[o] = 0; col[o + 1] = 0; col[o + 2] = 0; // 根元側の縁は透明(加算合成なので黒 = 見えない)
+            col[o + 3] = color.r * k; col[o + 4] = color.g * k; col[o + 5] = color.b * k;
           }
           geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
           mesh.visible = samples.some((s) => s.s > 0.01 && time - s.time < LIFE);
