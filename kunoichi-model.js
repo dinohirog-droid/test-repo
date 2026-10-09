@@ -167,7 +167,7 @@
       ],
     },
     handStyle: { scale: 0.8, armor: true, cuff: false, glow: false, glove: 'suit', knuckle: 'suit', plate: 'steel' },
-    noOutline: ['eyes', 'skin', 'faceFull'],
+    noOutline: ['eyes', 'skin', 'faceFull', 'faceLine'],
     face: { full: { sx: 0.93, mouthY: 0.04, mouthScale: 3.3, cheekY: 0.068, eyeScale: 1.22 } }, // 目は共通基盤のアニメ調の目(M.eyes)。素顔は顔全体の絵(M.faceFull)
 
     materials(ctx) {
@@ -274,6 +274,14 @@
         headGeo.computeVertexNormals();
       })();
       const headMesh = add(head, headGeo, M.skin);
+      // 顔の輪郭線: 地肌の形を法線方向に少し太らせた裏面を、肌になじむ焦げ茶で描く(全体の黒い輪郭線より細く柔らかく)
+      M.faceLine = new THREE.MeshBasicMaterial({ color: U.C(0x4a2a26), side: THREE.BackSide });
+      ctx.faceLine = add(head, (function () {
+        const g = headGeo.clone(), pa = g.attributes.position, nm = g.attributes.normal;
+        for (let i = 0; i < pa.count; i++) pa.setXYZ(i, pa.getX(i) + nm.getX(i) * 0.003, pa.getY(i) + nm.getY(i) * 0.003, pa.getZ(i) + nm.getZ(i) * 0.003);
+        return g;
+      })(), M.faceLine);
+      ctx.faceLine.castShadow = false;
       // 素顔の絵(目・眉・頬・鼻・口)。地肌と同じ形を少し大きくして貼る。マスクを着けている間は隠す
       ctx.faceMesh = add(head, U.faceUV(headGeo.clone(), ctx.face.full), M.faceFull);
       ctx.faceMesh.scale.setScalar(1.004); ctx.faceMesh.position.y = -0.09 * 0.004;
@@ -310,7 +318,7 @@
         if (p.y > 0.14 && p.z > 0) p.z += (p.y - 0.14) * 0.35 * clamp(1 - Math.abs(p.x) / 0.12, 0, 1);
         if (p.y > 0.2) p.y += (p.y - 0.2) * 0.6 * clamp(1 - Math.abs(p.x) / 0.06, 0, 1);
         return p;
-      }, (o) => o === ctx.eyeMesh || o === ctx.faceMesh || o.material === M.skin || ctx.markers.indexOf(o) >= 0 || o.material === M.mask);
+      }, (o) => o === ctx.eyeMesh || o === ctx.faceMesh || o === ctx.faceLine || o.material === M.skin || ctx.markers.indexOf(o) >= 0 || o.material === M.mask);
 
       /* ---------- 髪(フードを外したとき): 頭を覆う髪・結び目・高めのポニーテール ---------- */
       // 頭を覆う髪: 球を頭より少し大きく置き、顔と耳とうなじの下の部分は地肌の内側へ沈める(生え際がなめらかに残る)
