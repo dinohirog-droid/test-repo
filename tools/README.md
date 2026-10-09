@@ -16,7 +16,7 @@ npx playwright install chromium   # 初回だけ。ブラウザを入れずに�
 node shoot.mjs shots/cyber-knight-baseline.json --out out/before
 ```
 
-- 撮影リスト(`shots/*.json`)の各要素は `{ name, js, cam, target, wait }` です。
+- 撮影リスト(`shots/*.json`)の各要素は `{ name, js, cam, target, wait }` です。`cam` の代わりに `focus: { object: 'hands.R.root', offset: [0, 0, 0.5] }` と書くと、その部位にカメラを向けます(手のアップなど)。
 - `js` はページ内で実行するコードです。スタジオでは `__studio` から次のものが使えます。
   - `K`(ナイト)、`H`(バイク)、`G`(天馬)
   - `step(n)`: n フレームだけ進めます

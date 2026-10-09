@@ -22,7 +22,15 @@ await page.evaluate(() => { const S = window.__studio || window.__stage; if (S &
 if (!argv.includes('--ui')) await page.addStyleTag({ content: '.panel,.hint,#topbar,#title,#touch{display:none!important}' });
 for (const s of shots) {
   if (s.js) await page.evaluate(s.js);
-  if (s.cam) {
+  if (s.focus) { // 部位にカメラを向ける: { object: 'hands.R.root', offset: [x, y, z](m), model: 'K' }
+    await page.evaluate((f) => {
+      const S = window.__studio || window.__stage, M = S[f.model || 'K'];
+      const o = f.object.split('.').reduce((a, k) => a[k], M);
+      const p = o.getWorldPosition(S.camera.position.clone());
+      S.camera.position.copy(p).add(new p.constructor(...(f.offset || [0, 0, 0.6])));
+      if (S.controls) { S.controls.target.copy(p); S.controls.update(); } else S.camera.lookAt(p);
+    }, s.focus);
+  } else if (s.cam) {
     await page.evaluate(([c, t]) => {
       const S = window.__studio || window.__stage;
       S.camera.position.set(...c);

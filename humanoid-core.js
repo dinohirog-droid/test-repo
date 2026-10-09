@@ -33,12 +33,52 @@
     ['toe', 'ankle', [0, -0.05, 0.09], { x: [-45, 30] }, 'つま先'],
   ];
   // 手首パーツのプリセット: c=4 本の曲げ(0 伸ばす〜1 握る) / th=親指 / sp=指の開き
+  // 細かい指定(省略可。あればこちらが優先): f = 指ごとの [付け根, 中, 先] の曲げ(人差し指〜小指、0〜1)/
+  //   spr = 指ごとの開き(ラジアン。+ で親指側へ)/ t = 親指 { o: 向かい合わせ(0〜1.5), r: ひねり, f: [付け根, 中, 先] の曲げ }
   const HANDS = {
     grip: { c: [0.82, 0.82, 0.82, 0.82], th: 0.8, sp: 0 },   // 持ち手(柄を握る)
     fist: { c: [1, 1, 1, 1], th: 1, sp: 0 },                  // 握り手
     open: { c: [0.05, 0.05, 0.05, 0.05], th: 0.05, sp: 0.8 }, // 開き手
     relax: { c: [0.35, 0.4, 0.45, 0.5], th: 0.3, sp: 0.3 },   // 自然
+    // 指先でつまむ(親指と人差し指の先を合わせる)
+    pinch: { c: [0.5, 0.8, 0.85, 0.9], th: 0.7, sp: 0.1, f: [[0.45, 0.8, 0.4], [0.6, 0.8, 0.6], [0.8, 0.9, 0.7], [0.85, 0.95, 0.75]], t: { o: 1.2, r: 0, f: [0.2, 0.3, 0.3] } },
+    // 人差し指と中指の間に挟む(2 本はまっすぐ、間を開ける。薬指・小指・親指は握る)
+    scissor: { c: [0.05, 0.05, 1, 1], th: 0.85, sp: 0, f: [[0.05, 0.02, 0.02], [0.05, 0.02, 0.02], [1, 1, 0.9], [1, 1, 0.9]], spr: [0.2, -0.16, -0.05, -0.08], t: { o: 1.1, r: 0.3, f: [0.6, 0.7, 0.6] } },
+    // 指さし(人差し指だけ伸ばす)
+    point: { c: [0.02, 1, 1, 1], th: 0.9, sp: 0, f: [[0.02, 0.02, 0.02], [1, 1, 0.9], [1, 1, 0.9], [1, 1, 0.9]], t: { o: 1.1, r: 0.2, f: [0.5, 0.7, 0.6] } },
+    // 剣指(人差し指と中指をそろえて伸ばす)
+    sword: { c: [0.02, 0.02, 1, 1], th: 0.9, sp: 0, f: [[0.02, 0.02, 0.02], [0.02, 0.02, 0.02], [1, 1, 0.9], [1, 1, 0.9]], spr: [-0.05, 0.05, 0, 0], t: { o: 1.2, r: 0.3, f: [0.5, 0.8, 0.7] } },
+    // 手刀(指をそろえて伸ばし、親指を添える)
+    chop: { c: [0, 0, 0, 0], th: 0.2, sp: 0, f: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], spr: [-0.05, -0.015, 0.015, 0.05], t: { o: 0.6, r: 0, f: [0.15, 0.2, 0.1] } },
   };
+  const HAND_LABELS = { grip: '持ち手', fist: '握り手', open: '開き手', relax: '自然', pinch: 'つまむ', scissor: '指で挟む', point: '指さし', sword: '剣指', chop: '手刀' };
+  // 手の形を細かい指定へそろえる({ c, th, sp } だけの形もここで変換する)
+  function handDetail(h, out) {
+    out = out || { f: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], spr: [0, 0, 0, 0], t: { o: 0, r: 0, f: [0, 0, 0] } };
+    const c = h.c || [0, 0, 0, 0], th = h.th || 0, sp = h.sp || 0;
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 3; j++) out.f[i][j] = h.f && h.f[i] && h.f[i][j] !== undefined ? h.f[i][j] : c[i];
+      out.spr[i] = h.spr && h.spr[i] !== undefined ? h.spr[i] : (1.5 - i) * 0.13 * sp;
+    }
+    const t = h.t || {};
+    out.t.o = t.o !== undefined ? t.o : th;
+    out.t.r = t.r !== undefined ? t.r : 0;
+    for (let j = 0; j < 3; j++) out.t.f[j] = t.f && t.f[j] !== undefined ? t.f[j] : j === 0 ? th - sp * 0.353 : th;
+    return out;
+  }
+  const lerpN = (a, b, k) => a + (b - a) * k;
+  // 2 つの手の形の補間(結果は細かい指定つき)
+  function blendHand(a, b, k, out) {
+    const A = handDetail(a), B = handDetail(b);
+    out = out || {};
+    out.c = [0, 1, 2, 3].map((i) => lerpN((a.c || [0, 0, 0, 0])[i], (b.c || [0, 0, 0, 0])[i], k));
+    out.th = lerpN(a.th || 0, b.th || 0, k); out.sp = lerpN(a.sp || 0, b.sp || 0, k);
+    out.f = A.f.map((f, i) => f.map((v, j) => lerpN(v, B.f[i][j], k)));
+    out.spr = A.spr.map((v, i) => lerpN(v, B.spr[i], k));
+    out.t = { o: lerpN(A.t.o, B.t.o, k), r: lerpN(A.t.r, B.t.r, k), f: A.t.f.map((v, j) => lerpN(v, B.t.f[j], k)) };
+    return out;
+  }
+  const cloneHand = (h) => JSON.parse(JSON.stringify(h));
 
   // 形状・色のヘルパー(キャラクターのファイルからも ctx.U として使う)
   function makeUtils(THREE) {
@@ -486,8 +526,8 @@
   }
 
   global.HumanoidCore = {
-    version: '2026.10.10',
-    HANDS,
+    version: '2026.10.11',
+    HANDS, HAND_LABELS, handDetail, blendHand,
     drawAnimeEyes: drawEyes, EYE_SIZE: { width: EYE_W, height: EYE_H, res: RES }, FACE_EXPRESSIONS, IRIS_STYLES,
     STANDARD_BASE,
     STANDARD_SIDE,
@@ -666,20 +706,45 @@
         h.grip = new THREE.Object3D();
         h.grip.position.set(-m * 0.03, -0.112, 0);
         wr.add(h.grip);
+        // 指先の目印(つまむ点の計算用)
+        h.tips = h.fingers.concat([h.thumb]).map((f, i) => {
+          const o = new THREE.Object3D();
+          o.position.y = -(i < 4 ? 0.021 * ks[i] : 0.02);
+          f[2].add(o);
+          return o;
+        });
+        // 持ち方の点(腕 IK の目標に userData.handPoint で指定できる):
+        //   gap = 人差し指と中指の間(付け根の節の中ほど)。挟む物の軸は手の X(甲から手のひらへ抜ける向き)
+        //   pinch = 親指と人差し指の先の間(毎フレーム指の形から求める)
+        h.gap = new THREE.Object3D();
+        h.gap.position.set(0, -0.122, (zs[0] + zs[1]) / 2);
+        wr.add(h.gap);
+        h.pinch = new THREE.Object3D();
+        wr.add(h.pinch);
         return h;
       }
       ['L', 'R'].forEach((s) => (ctx.hands[s] = spec.buildHand ? spec.buildHand(ctx, s) : buildStandardHand(s)));
-      function poseHand(s, c, th, sp) {
-        const h = ctx.hands[s], m = h.side;
+      const _hd = handDetail({ c: [0, 0, 0, 0] }), _p1 = V3(0, 0, 0), _p2 = V3(0, 0, 0);
+      // 手の形を指の関節へ(各指 3 節の曲げ・指ごとの開き・親指の向かい合わせとひねり)
+      function poseHand(s, hand) {
+        const h = ctx.hands[s], m = h.side, d = handDetail(hand, _hd);
+        if (!h.fingers.length) return;
         h.fingers.forEach((f, i) => {
-          const k = c[i];
-          f[0].rotation.set(-(1.5 - i) * 0.13 * sp, 0, -m * k * 1.45);
-          f[1].rotation.z = -m * k * 1.75;
-          f[2].rotation.z = -m * k * 1.15;
+          const k = d.f[i];
+          f[0].rotation.set(-d.spr[i], 0, -m * k[0] * 1.45);
+          f[1].rotation.z = -m * k[1] * 1.75;
+          f[2].rotation.z = -m * k[2] * 1.15;
         });
-        h.thumb[0].rotation.set(-0.55 + th * 0.35, 0, -m * (0.25 + th * 0.85 - sp * 0.3));
-        h.thumb[1].rotation.set(th * 0.4, 0, -m * th * 0.7);
-        h.thumb[2].rotation.z = -m * th * 0.6;
+        const t = d.t;
+        h.thumb[0].rotation.set(-0.55 + t.o * 0.35, m * t.r * 0.8, -m * (0.25 + t.f[0] * 0.85));
+        h.thumb[1].rotation.set(t.o * 0.4, 0, -m * t.f[1] * 0.7);
+        h.thumb[2].rotation.z = -m * t.f[2] * 0.6;
+        if (h.pinch && h.tips) { // 親指と人差し指の先の中点
+          h.root.updateMatrixWorld(true);
+          h.root.worldToLocal(h.tips[0].getWorldPosition(_p1));
+          h.root.worldToLocal(h.tips[4].getWorldPosition(_p2));
+          h.pinch.position.copy(_p1).add(_p2).multiplyScalar(0.5);
+        }
       }
 
       /* ---------- キャラクター固有の形状 ---------- */
@@ -713,7 +778,7 @@
       function newPose() {
         const P = { j: {}, root: [0, 0, 0], yaw: 0, flip: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0, reach: { L: null, R: null }, reachW: { L: 0, R: 0 } };
         JNAMES.forEach((n) => (P.j[n] = [0, 0, 0]));
-        ['L', 'R'].forEach((s) => (P.hand[s] = { c: HANDS.relax.c.slice(), th: HANDS.relax.th, sp: HANDS.relax.sp }));
+        ['L', 'R'].forEach((s) => (P.hand[s] = cloneHand(HANDS.relax)));
         return P;
       }
       function copyPose(Q, P) {
@@ -724,7 +789,7 @@
         Q.reach = { L: pr.L || null, R: pr.R || null }; Q.reachW = { L: pw.L || 0, R: pw.R || 0 };
         ['L', 'R'].forEach((s) => {
           Q.feet[s] = P.feet[s].slice(); while (Q.feet[s].length < 6) Q.feet[s].push(0);
-          Q.hand[s] = { c: P.hand[s].c.slice(), th: P.hand[s].th, sp: P.hand[s].sp };
+          Q.hand[s] = cloneHand(P.hand[s]);
         });
       }
       function clonePose(P) { const Q = newPose(); copyPose(Q, P); return Q; }
@@ -735,7 +800,7 @@
         P.flip = S.flip || 0;
         // 前のモードの手の目標・手の形を持ち越さない(ポーズを毎フレーム同じ入れ物に書くため)
         P.reach.L = P.reach.R = null; P.reachW.L = P.reachW.R = 0;
-        ['L', 'R'].forEach((s) => { const hs = (S.hand && S.hand[s]) || HANDS.relax; P.hand[s] = { c: hs.c.slice(), th: hs.th, sp: hs.sp }; });
+        ['L', 'R'].forEach((s) => { const hs = (S.hand && S.hand[s]) || HANDS.relax; P.hand[s] = cloneHand(typeof hs === 'string' ? HANDS[hs] : hs); });
         P.trail = 0;
         ['L', 'R'].forEach((s) => { P.feet[s] = S.feet[s].slice(); while (P.feet[s].length < 6) P.feet[s].push(0); });
         return P;
@@ -753,9 +818,7 @@
           const a = A.feet[s], b = B.feet[s], o = out.feet[s];
           for (let i = 0; i < 6; i++) o[i] = lerp(a[i] || 0, b[i] || 0, k);
           o[3] += Math.sin(Math.PI * k) * Math.min(0.12, Math.hypot(b[0] - a[0], b[1] - a[1]) * 0.45);
-          const ha = A.hand[s], hb = B.hand[s], ho = out.hand[s];
-          for (let i = 0; i < 4; i++) ho.c[i] = lerp(ha.c[i], hb.c[i], k);
-          ho.th = lerp(ha.th, hb.th, k); ho.sp = lerp(ha.sp, hb.sp, k);
+          out.hand[s] = blendHand(A.hand[s], B.hand[s], k, {});
         });
         return out;
       }
@@ -794,9 +857,7 @@
         });
         armOf(P, s, 'shoulder')[0] += (swing || 0) * w;
         armOf(P, s, 'elbow')[0] -= (bend || 0) * w;
-        const h = P.hand[s], r = HANDS.relax;
-        for (let i = 0; i < 4; i++) h.c[i] = lerp(h.c[i], r.c[i], w);
-        h.th = lerp(h.th, r.th, w); h.sp = lerp(h.sp, r.sp, w);
+        P.hand[s] = blendHand(P.hand[s], HANDS.relax, w, {});
       }
       function legGeom() {
         const L1 = J.knee_L.position.length(), L2 = J.ankle_L.position.length();
@@ -854,12 +915,11 @@
           freeArm(P, s, w, -o.arm * k + o.armBase, o.elbow + o.elbowSwing * Math.max(0, k));
           addJ(P, 'shoulder_' + s, -o.arm * 0.3 * k * (1 - w)); // 持ち物のある腕は控えめに
           if (o.run && w > 0) {
-            const h = P.hand[s], f = HANDS.fist;
-            for (let i = 0; i < 4; i++) h.c[i] = lerp(h.c[i], f.c[i] * 0.75, w);
-            h.th = lerp(h.th, 0.7, w);
+            P.hand[s] = blendHand(P.hand[s], RUN_HAND, w, {});
           }
         });
       }
+      const RUN_HAND = { c: [0.75, 0.75, 0.75, 0.75], th: 0.7, sp: 0 }; // 走りの軽い握り
       const WALK = { freq: 0.95, stride: 0.62, duty: 0.6, lift: 0.1, heel: 14, toeOff: 26, heelOff: 0.62, width: 0.75, toeOut: 7, zOff: 0.02, crouch: 0.012,
         bob: 0.022, sway: 0.03, twist: 7, drop: 3.5, lean: 3, pitch: 1, arm: 20, armBase: 2, elbow: 10, elbowSwing: 18, run: false };
       const RUN = { freq: 1.4, stride: 0.95, duty: 0.36, lift: 0.3, heel: 6, toeOff: 30, heelOff: 0.45, width: 0.6, toeOut: 4, zOff: 0.06, crouch: 0.05,
@@ -918,7 +978,7 @@
           ['hips', 'spine', 'chest', 'neck', 'head'].forEach((n) => (P.j[n] = st[n].slice()));
           breathe(P, t, 0.5);
           P.look = 0.25;
-          ['L', 'R'].forEach((s) => { P.hand[s] = { c: HANDS.grip.c.slice(), th: HANDS.grip.th, sp: 0 }; });
+          ['L', 'R'].forEach((s) => { P.hand[s] = cloneHand(HANDS.grip); });
           if (!rideT) return;
           figure.updateWorldMatrix(true, false);
           const seat = figure.worldToLocal(rideT.seat.getWorldPosition(V3(0, 0, 0)));
@@ -939,6 +999,7 @@
       const equip = { L: true, R: true };
       ['L', 'R'].forEach((s) => { const it = items[s]; if (it && options[it.name] === false) equip[s] = false; });
       const handOverride = { L: null, R: null };
+      const handShape = { L: null, R: null }; // setHandPose で直接指定した手の形
       const freeTarget = (s) => (items[s] && equip[s] && !(handOverride[s] && handOverride[s] !== 'grip') ? 0 : 1);
       ['L', 'R'].forEach((s) => (freeW[s] = freeTarget(s)));
       let currentMode = MODES[options.mode] ? options.mode : 'idle', mt = 0;
@@ -1005,8 +1066,8 @@
         const Yh = V3(0, 0, 0).crossVectors(Zh, Xh);
         _hq.setFromRotationMatrix(_m.makeBasis(Xh, Yh, Zh));
         model.getWorldScale(_ws);
-        // 握り点の手首からのずれ(手の大きさ・縮尺込み)を、目標の手の向きで戻す
-        const hg = ctx.hands[s].grip;
+        // 握り点(目標の userData.handPoint で gap / pinch も指定できる)の手首からのずれ(手の大きさ・縮尺込み)を、目標の手の向きで戻す
+        const hg = ctx.hands[s][grip.userData.handPoint || 'grip'] || ctx.hands[s].grip;
         wr.updateWorldMatrix(true, false); hg.updateWorldMatrix(true, false);
         const off = wr.worldToLocal(hg.getWorldPosition(V3(0, 0, 0))).multiplyScalar(_ws.x);
         const wristW = grip.getWorldPosition(_c).sub(off.applyQuaternion(_hq));
@@ -1052,16 +1113,16 @@
           figure.position.copy(_v).sub(_v.clone().applyAxisAngle(XA, fl)).applyAxisAngle(_v.set(0, 1, 0), P.yaw * D2R);
         } else figure.position.set(0, 0, 0);
         root.updateMatrixWorld(true);
+        // 指の形は先に決める(つまむ点など、手の形で動く目標点を腕 IK が使うため)
+        ['L', 'R'].forEach((s) => {
+          const holding = items[s] && equip[s], ov = handOverride[s];
+          poseHand(s, handShape[s] ? handShape[s] : holding ? HANDS[items[s].hand || 'grip'] : ov ? (typeof ov === 'string' ? HANDS[ov] : ov) : P.hand[s]);
+        });
         if (state.ik) { solveLeg('L', P); solveLeg('R', P); }
         if (rideT && armW > 0.001) { solveArm('L', P, armW, rideT.grips.L); solveArm('R', P, armW, rideT.grips.R); }
         else ['R', 'L'].forEach((s) => { // ポーズが指定した目標へ手を伸ばす(刀の両手持ちなど)
           const tg = P.reach[s] && ctx.reach[P.reach[s]];
           if (tg && P.reachW[s] > 0.001) { root.updateMatrixWorld(true); solveArm(s, P, P.reachW[s], tg); }
-        });
-        ['L', 'R'].forEach((s) => {
-          const holding = items[s] && equip[s];
-          const h = holding ? HANDS[items[s].hand || 'grip'] : handOverride[s] ? HANDS[handOverride[s]] : P.hand[s];
-          poseHand(s, h.c, h.th, h.sp);
         });
         syncLinked();
         root.updateMatrixWorld(true);
@@ -1391,6 +1452,13 @@
         ['L', 'R'].forEach((s) => { if (items[s]) r[items[s].name] = equip[s]; });
         return r;
       }
+      // 手の形を直接指定する(関節エディタ用。持ち物・モードより優先)。null で戻す
+      function setHandPose(side, hand) { handShape[side] = hand ? cloneHand(typeof hand === 'string' ? HANDS[hand] : hand) : null; }
+      function getHandPose(side) {
+        const holding = items[side] && equip[side], ov = handOverride[side];
+        const h = handShape[side] || (holding ? HANDS[items[side].hand || 'grip'] : ov ? HANDS[ov] : cur.hand[side]);
+        return handDetail(h);
+      }
       function setHand(side, preset) {
         if (preset && !HANDS[preset]) return;
         handOverride[side] = preset || null;
@@ -1413,7 +1481,7 @@
         setMode, getMode: () => currentMode,
         update,
         setColor, getColor: () => colorId,
-        setHand, getHand: (s) => handOverride[s],
+        setHand, getHand: (s) => handOverride[s], setHandPose, getHandPose, HAND_LABELS,
         setEquip, getEquip,
         setOutline, getOutline: () => ({ on: outlineMat.visible, width: outlineU.value }),
         setIK: (on) => { state.ik = !!on; },
