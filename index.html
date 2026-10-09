@@ -90,7 +90,8 @@
     <div id="actions-box"><h2>アクション</h2>
     <div class="grid" id="actions"></div></div>
     <div id="expr-box" hidden><h2>表情</h2>
-    <div class="grid three" id="exprs"></div></div>
+    <div class="grid three" id="exprs"></div>
+    <div class="grid three" id="iris-styles" style="margin-top:6px"></div></div>
 
     <h2>カラーバリエーション</h2>
     <div class="grid" id="variants"></div>
@@ -296,6 +297,11 @@ if (K.setExpr) {
   for (const e of K.EXPRESSIONS) {
     const b = button('#exprs', XL[e] || e, () => { K.setExpr(e); group('#exprs', b); });
     if (e === K.getExpr()) b.classList.add('on');
+  }
+  const IL = Model.info.irisStyleLabels || {};
+  for (const st of K.IRIS_STYLES || []) {
+    const b = button('#iris-styles', IL[st] || st, () => { K.setIrisStyle(st); group('#iris-styles', b); });
+    if (st === K.getIrisStyle()) b.classList.add('on');
   }
 }
 const modeBtns = {};

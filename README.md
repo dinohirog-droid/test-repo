@@ -117,7 +117,8 @@ knight.setWind(steed.getSpeed() * 0.6);
 共通基盤で作った 2 体目の人型です。6.5 頭身(身長約 1.56 m)で、フードとマスクから大きな目だけが見えます。スタジオでは `index.html?char=kunoichi`(または上部のキャラ切り替えボタン)で表示します。
 
 - 武器: 刀(右手。構えでは左手も腕 IK で柄を握る)、左腰に鞘、背中に短刀、右太ももにクナイ
-- 目: キャンバスに描いたアニメ調の目。表情は 通常 / 驚き / 怒り / 笑い / 悲しみ、まばたきつき
+- 目: キャンバスに描いたアニメ調の目(ステンドグラス風の虹彩・縦長の瞳孔・重ねた光・目尻ほど太いまつげ)。表情は 通常 / 驚き / 怒り / 笑い / 悲しみ、まばたきつき。瞳の模様は 通常 / 星空 / 魔法陣
+- 目の画像差し替え: `setEyeImages({ iris: 'iris.png' })` で虹彩だけ画像にできます(まぶた・表情・まばたきは描画のまま)。色ごとに `{ crimson: …, indigo: … }`、表情ごとに両目まるごと `full: { normal: …, smile: …, closed: … }`(512:232)も指定できます。透過 PNG・虹彩 256px 以上を推奨します
 - マント: 裾がほつれた布(背中に家紋)
 - カラバリ: 紅 / 藍 / 緑 / 紫(目の色も変わります)
 - モーション: 待機・構え・隠密(忍び足)・歩く・走る。跳躍・空中攻撃・手裏剣投げは次の段階で追加予定です
@@ -127,6 +128,7 @@ const kunoichi = KunoichiModel.create(THREE, scene, { scale: 2.4 });
 kunoichi.setMode('guard');      // 'idle' | 'guard' | 'stealth' | 'walk' | 'run'
 kunoichi.setExpr('smile');      // 'normal' | 'surprise' | 'angry' | 'smile' | 'sad'
 kunoichi.setColor('indigo');    // 'crimson' | 'indigo' | 'green' | 'purple'
+kunoichi.setIrisStyle('magic'); // 'normal' | 'sparkle' | 'magic'
 kunoichi.update(dt, t, camera);
 ```
 
