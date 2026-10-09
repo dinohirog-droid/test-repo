@@ -101,14 +101,7 @@
     <h2>手首パーツ(左手)</h2>
     <div class="grid four" id="hand-L"></div>
 
-    <details id="finger-box"><summary><h2 style="display:inline">指の編集</h2></summary>
-      <label class="tg"><input type="checkbox" id="fe-on" /> 指を手で動かす(持ち物・モードより優先)</label>
-      <div class="grid three" id="fe-side"></div>
-      <div class="grid three" id="fe-presets" style="margin-top:6px"></div>
-      <div id="fe-sliders"></div>
-      <div class="grid three" style="margin-top:6px"><button id="fe-copy">形を JSON でコピー</button></div>
-      <textarea id="fe-json" rows="3" readonly style="width:100%;font-size:11px;margin-top:4px;background:#0b0f16;color:#9fb3c8;border:1px solid #263244"></textarea>
-    </details>
+    <a id="pose-editor-link" href="pose-editor.html" style="display:block;margin:10px 0;color:var(--accent)">ポーズ編集を開く(関節・指・腕 IK・キーフレーム)</a>
 
     <h2>武装</h2>
     <label class="tg"><input type="checkbox" id="eq-sword" /> <span id="eq-sword-label">エネルギーソード(右手)</span></label>
@@ -397,47 +390,7 @@ function syncEquip() {
 }
 syncEquip();
 
-// 指の編集: 各指の 3 節の曲げ・開き、親指の向かい合わせ・ひねり・曲げをスライダーで動かす
-(function fingerEditor() {
-  if (!K.setHandPose) { $('#finger-box').hidden = true; return; }
-  let side = 'R', shape = K.getHandPose(side);
-  const FN = ['人差し指', '中指', '薬指', '小指'], JN = ['付け根', '中', '先'];
-  const rows = [];
-  const addRow = (label, min, max, step, get, set) => {
-    const d = document.createElement('div');
-    d.className = 'ax';
-    d.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" /><output></output>`;
-    $('#fe-sliders').appendChild(d);
-    const inp = d.querySelector('input'), out = d.querySelector('output');
-    inp.addEventListener('input', () => { set(+inp.value); out.textContent = (+inp.value).toFixed(2); apply(); });
-    rows.push(() => { inp.value = get(); out.textContent = (+get()).toFixed(2); });
-  };
-  FN.forEach((fn, i) => {
-    JN.forEach((jn, j) => addRow(`${fn} ${jn}`, 0, 1, 0.01, () => shape.f[i][j], (v) => (shape.f[i][j] = v)));
-    addRow(`${fn} 開き`, -0.4, 0.4, 0.01, () => shape.spr[i], (v) => (shape.spr[i] = v));
-  });
-  addRow('親指 向かい合わせ', 0, 1.5, 0.01, () => shape.t.o, (v) => (shape.t.o = v));
-  addRow('親指 ひねり', -1, 1, 0.01, () => shape.t.r, (v) => (shape.t.r = v));
-  JN.forEach((jn, j) => addRow(`親指 ${jn}`, 0, 1, 0.01, () => shape.t.f[j], (v) => (shape.t.f[j] = v)));
-  const sync = () => { rows.forEach((r) => r()); $('#fe-json').value = JSON.stringify({ f: shape.f, spr: shape.spr, t: shape.t }, (k, v) => (typeof v === 'number' ? +v.toFixed(2) : v)); };
-  const apply = () => { if ($('#fe-on').checked) K.setHandPose(side, shape); sync(); };
-  $('#fe-on').addEventListener('change', () => { K.setHandPose(side, $('#fe-on').checked ? shape : null); });
-  const sideBtns = [['R', '右手'], ['L', '左手']].map(([s, label]) => {
-    const b = button('#fe-side', label, () => {
-      K.setHandPose(side, null);
-      side = s; shape = K.getHandPose(side); group('#fe-side', b);
-      if ($('#fe-on').checked) K.setHandPose(side, shape);
-      sync();
-    });
-    return b;
-  });
-  sideBtns[0].classList.add('on');
-  for (const [h, label] of Object.entries(HAND_LABELS)) {
-    button('#fe-presets', label, () => { K.setHandPose(side, h); shape = K.getHandPose(side); $('#fe-on').checked = true; K.setHandPose(side, shape); sync(); });
-  }
-  $('#fe-copy').addEventListener('click', () => { sync(); try { navigator.clipboard.writeText($('#fe-json').value); } catch (e) { /* 失敗しても欄から選んでコピーできる */ } });
-  sync();
-})();
+$('#pose-editor-link').href = 'pose-editor.html' + (CHAR === 'knight' ? '' : '?char=' + CHAR);
 
 const clr = $('#clearance');
 clr.value = K.getShieldClearance ? K.getShieldClearance() * 100 : 5;

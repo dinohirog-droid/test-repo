@@ -797,7 +797,7 @@
         const S = STATIC[name];
         JNAMES.forEach((n) => { const a = S.j[n] || [0, 0, 0]; P.j[n][0] = a[0]; P.j[n][1] = a[1]; P.j[n][2] = a[2]; });
         for (let i = 0; i < 3; i++) P.root[i] = S.root[i];
-        P.flip = S.flip || 0;
+        P.flip = S.flip || 0; P.yaw = S.yaw || 0;
         // 前のモードの手の目標・手の形を持ち越さない(ポーズを毎フレーム同じ入れ物に書くため)
         P.reach.L = P.reach.R = null; P.reachW.L = P.reachW.R = 0;
         ['L', 'R'].forEach((s) => { const hs = (S.hand && S.hand[s]) || HANDS.relax; P.hand[s] = cloneHand(typeof hs === 'string' ? HANDS[hs] : hs); });

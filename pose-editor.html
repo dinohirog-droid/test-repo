@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pose Editor</title>
+  <style>
+    :root {
+      --bg: #070b14; --panel: rgba(12, 20, 36, 0.92); --line: rgba(110, 180, 255, 0.22);
+      --text: #dbe6f5; --dim: #8a9bb6; --accent: #3aa8ff; --hot: #ffa53a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; font-size: 12px; }
+    #view { position: fixed; left: 0; top: 0; display: block; }
+    #hit { position: fixed; left: 0; top: 0; touch-action: none; }
+    #ref { position: fixed; pointer-events: none; opacity: 0.4; display: none; transform-origin: 50% 50%; }
+    .vlabel { position: fixed; color: var(--dim); font-size: 11px; pointer-events: none; background: rgba(7, 11, 20, 0.6); padding: 1px 6px; border-radius: 4px; }
+    #panel { position: fixed; right: 0; top: 0; bottom: 0; width: 330px; background: var(--panel); border-left: 1px solid var(--line);
+      overflow-y: auto; padding: 10px 12px 40px; }
+    h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: 0.06em; }
+    .sub { color: var(--dim); margin-bottom: 8px; }
+    details { border-top: 1px solid var(--line); padding: 6px 0; }
+    summary { cursor: pointer; font-weight: 600; color: #cfe3ff; padding: 3px 0; }
+    summary::before { content: "■ "; color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 4px 0; }
+    .grid.two { grid-template-columns: repeat(2, 1fr); }
+    .grid.four { grid-template-columns: repeat(4, 1fr); }
+    button, select, input[type=text], input[type=number], textarea { font: inherit; color: var(--text); background: rgba(40, 70, 120, 0.35);
+      border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button.on { background: rgba(58, 168, 255, 0.45); border-color: var(--accent); color: #fff; }
+    select { width: 100%; }
+    textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+    .ax { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 6px; margin: 2px 0; }
+    .ax span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ax input[type=range] { width: 100%; }
+    .ax output { text-align: right; font-variant-numeric: tabular-nums; }
+    .ax.off { opacity: 0.4; }
+    label.tg { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+    .note { color: var(--dim); font-size: 11px; margin: 4px 0; line-height: 1.5; }
+    #frames { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; }
+    .frame { display: grid; grid-template-columns: 1fr 64px 26px; gap: 4px; align-items: center; }
+    .frame button.sel { border-color: var(--hot); color: var(--hot); }
+    #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(20, 40, 70, 0.95); border: 1px solid var(--accent);
+      padding: 6px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    @media (max-width: 760px) { #panel { width: 100%; top: 55%; } }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <img id="ref" alt="" />
+  <div id="hit"></div>
+  <div class="vlabel" id="lab-main">自由視点(ドラッグで回転・関節マーカーをクリックで選択)</div>
+  <div class="vlabel" id="lab-0">正面</div>
+  <div class="vlabel" id="lab-1">横(右から)</div>
+  <div class="vlabel" id="lab-2">真上</div>
+  <div id="toast"></div>
+
+  <div id="panel">
+    <h1>POSE EDITOR</h1>
+    <div class="sub" id="char-sub"></div>
+    <div class="grid two" id="chars"></div>
+    <div class="grid four">
+      <button id="undo" title="Ctrl+Z">元に戻す</button><button id="redo" title="Ctrl+Y">やり直す</button>
+      <button id="quad">4 分割</button><a href="index.html" id="studio-link" style="align-self:center;color:var(--accent)">スタジオへ</a>
+    </div>
+
+    <details open><summary>開始ポーズ・表示</summary>
+      <div class="ax" style="grid-template-columns:92px 1fr"><span>読み込む</span><select id="load-static"></select></div>
+      <label class="tg"><input type="checkbox" id="ik" checked /> 脚 IK(足の位置で脚を決める)</label>
+      <label class="tg"><input type="checkbox" id="phys" checked /> 物理(マント・髪)</label>
+      <label class="tg"><input type="checkbox" id="markers" checked /> 関節マーカー</label>
+      <label class="tg"><input type="checkbox" id="outline" checked /> 輪郭線</label>
+      <div id="items"></div>
+    </details>
+
+    <details open><summary>関節</summary>
+      <select id="joint"></select>
+      <div id="joint-sliders"></div>
+      <div class="note" id="leg-note" hidden>脚 IK が有効なので、脚の関節は「足」で動かします(IK を切ると直接動かせます)</div>
+      <div class="grid"><button id="joint-zero">この関節を 0 に</button><button id="mirror-lr">左→右へ反転コピー</button><button id="mirror-rl">右→左へ反転コピー</button></div>
+    </details>
+
+    <details><summary>体の位置・向き</summary>
+      <div id="root-sliders"></div>
+    </details>
+
+    <details><summary>足(脚 IK)</summary>
+      <div class="grid two"><button data-foot="L" class="on">左足</button><button data-foot="R">右足</button></div>
+      <div id="foot-sliders"></div>
+      <div class="note">足の球(緑)をクリックすると、ドラッグで動かせます</div>
+    </details>
+
+    <details open><summary>腕 IK(手を目標へ)</summary>
+      <div class="note">「ドラッグ目標」にすると手の位置に球(水色)が出ます。球をクリックして動かす / W・E キーで移動・回転を切り替え。「腕の角度に焼き込む」で IK の結果を関節の角度にします</div>
+      <div class="ax" style="grid-template-columns:40px 1fr"><span>右手</span><select id="reach-R"></select></div>
+      <div class="ax" style="grid-template-columns:40px 1fr"><span>左手</span><select id="reach-L"></select></div>
+      <div class="ax" style="grid-template-columns:40px 1fr"><span>持つ点</span><select id="hand-point"><option value="grip">手のひら(握る)</option><option value="gap">人差し指と中指の間</option><option value="pinch">親指と人差し指の先</option></select></div>
+      <div class="grid two"><button id="bake">腕の角度に焼き込む</button><button id="reach-off">IK を外す</button></div>
+    </details>
+
+    <details open><summary>手・指</summary>
+      <div class="grid two"><button data-hand="R" class="on">右手</button><button data-hand="L">左手</button></div>
+      <div class="grid" id="hand-presets"></div>
+      <div id="finger-sliders"></div>
+      <div class="grid two"><button id="hand-mirror">反対の手へコピー</button><button id="hand-json">手の形をコピー</button></div>
+    </details>
+
+    <details><summary>キーフレーム</summary>
+      <div class="ax"><span>時刻(秒)</span><input type="range" id="scrub" min="0" max="2" step="0.01" value="0" /><output id="scrub-out">0.00</output></div>
+      <div class="grid four"><button id="key-add">追加</button><button id="key-set">上書き</button><button id="play">再生</button><label class="tg"><input type="checkbox" id="loop" checked />繰返</label></div>
+      <div id="frames"></div>
+      <div class="note">時刻を決めて「追加」で今のポーズを置きます。フレームを押すとそのポーズを編集できます(編集後「上書き」)</div>
+    </details>
+
+    <details open><summary>書き出し・保存</summary>
+      <div class="ax" style="grid-template-columns:60px 1fr"><span>名前</span><input type="text" id="pose-name" value="myPose" /></div>
+      <div class="grid"><button id="export-pose">ポーズを書き出す</button><button id="export-seq">技を書き出す</button><button id="copy-out">コピー</button></div>
+      <textarea id="out" rows="7" spellcheck="false" placeholder="ここに書き出したコードが出ます。JSON を貼り付けて「読み込む」こともできます"></textarea>
+      <div class="grid"><button id="import">読み込む</button><button id="save-local">ブラウザに保存</button><button id="download">ファイルに保存</button></div>
+      <select id="saved"></select>
+      <div class="grid two"><button id="load-local">保存から開く</button><button id="del-local">保存を消す</button></div>
+    </details>
+
+    <details><summary>参考画像</summary>
+      <input type="file" id="ref-file" accept="image/*" />
+      <div class="note">画像をこの画面へドラッグ&ドロップしても読み込めます(画像はこのブラウザの中だけで使い、送信しません)</div>
+      <div class="ax"><span>濃さ</span><input type="range" id="ref-op" min="0" max="1" step="0.05" value="0.4" /><output></output></div>
+      <div class="ax"><span>大きさ</span><input type="range" id="ref-sc" min="0.2" max="3" step="0.01" value="1" /><output></output></div>
+      <div class="ax"><span>左右</span><input type="range" id="ref-x" min="-1" max="1" step="0.005" value="0" /><output></output></div>
+      <div class="ax"><span>上下</span><input type="range" id="ref-y" min="-1" max="1" step="0.005" value="0" /><output></output></div>
+      <div class="grid"><button id="ref-flip">左右反転</button><button id="ref-hide">隠す</button><button id="ref-clear">消す</button></div>
+    </details>
+  </div>
+
+  <script src="./humanoid-core.js"></script>
+  <script src="./cyber-knight-model.js"></script>
+  <script src="./kunoichi-model.js"></script>
+  <script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = (s) => document.querySelector(s);
+const HC = window.HumanoidCore;
+const CHARS = {
+  knight: { model: window.CyberKnightModel, label: 'サイバーナイト' },
+  kunoichi: { model: window.KunoichiModel, label: 'くのいち' },
+};
+const qs = new URLSearchParams(location.search);
+const CHAR = CHARS[qs.get('char')] ? qs.get('char') : 'knight';
+const Model = CHARS[CHAR].model;
+$('#char-sub').textContent = CHARS[CHAR].label + 'のポーズを作る';
+$('#studio-link').href = 'index.html' + (CHAR === 'knight' ? '' : '?char=' + CHAR);
+for (const [k, c] of Object.entries(CHARS)) {
+  const b = document.createElement('button');
+  b.textContent = c.label;
+  if (k === CHAR) b.classList.add('on');
+  b.onclick = () => { location.search = '?char=' + k; };
+  $('#chars').appendChild(b);
+}
+const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.opacity = 0), 1800); };
+
+/* ---------- 画面 ---------- */
+const canvas = $('#view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a1020);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+scene.add(new THREE.HemisphereLight(0x9fb8ff, 0x202030, 0.6));
+const key = new THREE.DirectionalLight(0xfff4e8, 1.8);
+key.position.set(3, 5, 4); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2.5, bottom: -1 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x4aa8ff, 1.6); rim.position.set(-3, 3, -4); scene.add(rim);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 64), new THREE.MeshStandardMaterial({ color: 0x0f1726, roughness: 0.8 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(8, 32, 0x2a3e60, 0x16233a); grid.position.y = 0.001; scene.add(grid);
+
+const camera = new THREE.PerspectiveCamera(32, 1, 0.02, 40);
+camera.position.set(1.7, 1.4, 3.0);
+const hit = $('#hit');
+const controls = new OrbitControls(camera, hit);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+// 4 分割のときの正射影カメラ(正面・横・真上)
+const orthos = [
+  { pos: [0, 0.95, 5], up: [0, 1, 0] },
+  { pos: [-5, 0.95, 0], up: [0, 1, 0] },
+  { pos: [0, 6, 0.0001], up: [0, 0, -1] },
+].map((o) => { const c = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20); c.position.set(...o.pos); c.up.set(...o.up); c.lookAt(0, o.pos[1] === 6 ? 0 : 0.95, 0); return c; });
+let quad = false;
+
+/* ---------- キャラクター(縮尺 1 = メートル) ---------- */
+const K = Model.create(THREE, scene, { scale: 1, look: false });
+const ANKLE_H = Model.spec && Model.spec.ankleHeight !== undefined ? Model.spec.ankleHeight : 0.07;
+K.setLook(false);
+K.markers.forEach((m) => (m.visible = true));
+const LEG = (n) => /^(hip|knee|ankle|toe)_/.test(n);
+const SIDES = ['L', 'R'];
+const JL = Object.fromEntries(K.JOINTS.map((j) => [j.name, j]));
+const mirrorName = (n) => n.replace(/_L$/, '_#').replace(/_R$/, '_L').replace(/_#$/, '_R');
+
+/* ---------- 編集中のポーズ ---------- */
+// P は共通基盤のポーズと同じ形。K.setExternalPose(P) で毎フレームそのまま表示する
+const P = K.newPose();
+P.look = 0;
+const detail = (h) => { const d = HC.handDetail(typeof h === 'string' ? K.HANDS[h] : h); return { f: d.f, spr: d.spr, t: d.t }; };
+function loadStatic(S) {
+  K.JOINTS.forEach((j) => { P.j[j.name] = ((S.j && S.j[j.name]) || [0, 0, 0]).slice(); });
+  P.root = (S.root || [0, 0, 0]).slice();
+  P.yaw = S.yaw || 0; P.flip = S.flip || 0;
+  SIDES.forEach((s) => {
+    const f = ((S.feet && S.feet[s]) || P.feet[s]).slice(); while (f.length < 6) f.push(0);
+    P.feet[s] = f;
+    const it = K.items[s], holding = it && K.getEquip()[it.name];
+    P.hand[s] = detail((S.hand && S.hand[s]) || (holding ? it.hand || 'grip' : 'relax'));
+    P.reach[s] = null; P.reachW[s] = 0;
+  });
+}
+function snapshot() { return JSON.parse(JSON.stringify({ j: P.j, root: P.root, yaw: P.yaw, flip: P.flip, feet: P.feet, hand: P.hand, reach: P.reach, reachW: P.reachW })); }
+function restore(S) {
+  Object.assign(P, JSON.parse(JSON.stringify(S)));
+  K.JOINTS.forEach((j) => { if (!P.j[j.name]) P.j[j.name] = [0, 0, 0]; });
+  refresh();
+}
+function apply() { SIDES.forEach((s) => K.setHandPose(s, P.hand[s])); }
+
+// 元に戻す / やり直す(スライダーを離したときなど、区切りごとに記録)
+const undo = [], redo = [];
+let last = null;
+function commit() {
+  const s = JSON.stringify(snapshot());
+  if (s === last) return;
+  if (last) undo.push(last);
+  if (undo.length > 200) undo.shift();
+  last = s; redo.length = 0;
+  autosave();
+}
+function stepHistory(from, to) { if (!from.length) return; to.push(last); last = from.pop(); restore(JSON.parse(last)); autosave(); }
+$('#undo').onclick = () => stepHistory(undo, redo);
+$('#redo').onclick = () => stepHistory(redo, undo);
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); stepHistory(undo, redo); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); stepHistory(redo, undo); }
+  if (e.key === 'w') tc.setMode('translate');
+  if (e.key === 'e') tc.setMode('rotate');
+  if (e.key === 'Escape') tc.detach();
+});
+
+/* ---------- スライダーの部品 ---------- */
+const refreshers = [];
+function slider(parent, label, min, max, step, get, set, fmt) {
+  const d = document.createElement('div');
+  d.className = 'ax';
+  d.innerHTML = `<span title="${label}">${label}</span><input type="range" min="${min}" max="${max}" step="${step}" /><output></output>`;
+  parent.appendChild(d);
+  const inp = d.querySelector('input'), out = d.querySelector('output');
+  const show = () => { const v = get(); inp.value = v; out.textContent = fmt ? fmt(v) : Math.round(v); };
+  inp.addEventListener('input', () => { set(+inp.value); out.textContent = fmt ? fmt(+inp.value) : Math.round(+inp.value); apply(); });
+  inp.addEventListener('change', commit);
+  out.title = 'ダブルクリックで数値を入力';
+  out.addEventListener('dblclick', () => { const v = prompt(label, get()); if (v !== null && v !== '' && !isNaN(+v)) { set(+v); show(); apply(); commit(); } });
+  refreshers.push(show);
+  return { row: d, input: inp, show };
+}
+function refresh() { refreshers.forEach((f) => f()); buildJointSliders(); apply(); }
+
+/* ---------- 関節 ---------- */
+let selJoint = 'shoulder_R';
+const jointSel = $('#joint');
+K.JOINTS.forEach((j) => { const o = document.createElement('option'); o.value = j.name; o.textContent = j.label + '(' + j.name + ')'; jointSel.appendChild(o); });
+jointSel.onchange = () => selectJoint(jointSel.value);
+function selectJoint(n) {
+  selJoint = n; jointSel.value = n;
+  K.markers.forEach((m) => { const on = m.userData.joint === n; m.material.color.set(on ? 0xffa53a : 0x7fd8ff); m.scale.setScalar(on ? 1.6 : 1); });
+  buildJointSliders();
+}
+function buildJointSliders() {
+  const box = $('#joint-sliders');
+  box.innerHTML = '';
+  const j = JL[selJoint], legLocked = $('#ik').checked && LEG(selJoint);
+  $('#leg-note').hidden = !legLocked;
+  [['x', '前後(X)'], ['y', 'ひねり(Y)'], ['z', '左右(Z)']].forEach(([ax, label], i) => {
+    const lim = j.lim[ax];
+    if (lim[0] === lim[1]) return;
+    const s = slider(box, label, lim[0], lim[1], 1, () => P.j[selJoint][i], (v) => (P.j[selJoint][i] = v));
+    refreshers.pop(); // 関節を選び直すたびに作り直すので、全体の更新には入れない
+    s.show();
+    if (legLocked) { s.row.classList.add('off'); s.input.disabled = true; }
+  });
+}
+$('#joint-zero').onclick = () => { P.j[selJoint] = [0, 0, 0]; buildJointSliders(); apply(); commit(); };
+function mirror(from) {
+  K.JOINTS.forEach((j) => {
+    if (!j.name.endsWith('_' + from)) return;
+    const a = P.j[j.name];
+    P.j[mirrorName(j.name)] = [a[0], -a[1], -a[2]];
+  });
+  const to = from === 'L' ? 'R' : 'L', f = P.feet[from];
+  P.feet[to] = [-f[0], f[1], -f[2], f[3], f[4], -f[5]];
+  P.hand[to] = JSON.parse(JSON.stringify(P.hand[from]));
+  refresh(); commit();
+  toast((from === 'L' ? '左' : '右') + 'を反対側へコピーしました');
+}
+$('#mirror-lr').onclick = () => mirror('L');
+$('#mirror-rl').onclick = () => mirror('R');
+
+/* ---------- 体・足 ---------- */
+const rs = $('#root-sliders');
+slider(rs, '左右(m)', -0.5, 0.5, 0.005, () => P.root[0], (v) => (P.root[0] = v), (v) => v.toFixed(3));
+slider(rs, '上下(m)', -0.7, 0.8, 0.005, () => P.root[1], (v) => (P.root[1] = v), (v) => v.toFixed(3));
+slider(rs, '前後(m)', -0.5, 0.5, 0.005, () => P.root[2], (v) => (P.root[2] = v), (v) => v.toFixed(3));
+slider(rs, '向き(度)', -180, 180, 1, () => P.yaw, (v) => (P.yaw = v));
+slider(rs, '宙返り(度)', -360, 360, 1, () => P.flip, (v) => (P.flip = v));
+let footSide = 'L';
+const fs = $('#foot-sliders');
+[['左右(m)', -0.5, 0.5, 0.005, 0], ['前後(m)', -0.7, 0.7, 0.005, 1], ['持ち上げ(m)', -0.05, 1, 0.005, 3], ['向き(度)', -90, 90, 1, 2], ['つま先(度)', -40, 60, 1, 4], ['膝の開き(度)', -60, 80, 1, 5]]
+  .forEach(([label, mn, mx, st, i]) => slider(fs, label, mn, mx, st, () => P.feet[footSide][i], (v) => (P.feet[footSide][i] = v), st < 1 ? (v) => v.toFixed(3) : null));
+document.querySelectorAll('[data-foot]').forEach((b) => (b.onclick = () => {
+  footSide = b.dataset.foot;
+  document.querySelectorAll('[data-foot]').forEach((x) => x.classList.toggle('on', x === b));
+  refresh();
+}));
+
+/* ---------- 表示の切り替え・持ち物 ---------- */
+$('#ik').onchange = () => { K.setIK($('#ik').checked); buildJointSliders(); };
+$('#phys').onchange = () => K.setPhysics($('#phys').checked);
+$('#markers').onchange = () => K.markers.forEach((m) => (m.visible = $('#markers').checked));
+$('#outline').onchange = () => K.setOutline($('#outline').checked);
+SIDES.forEach((s) => {
+  const it = K.items[s];
+  if (!it) return;
+  const l = document.createElement('label');
+  l.className = 'tg';
+  l.innerHTML = `<input type="checkbox" checked /> 持ち物: ${it.name}(${s === 'R' ? '右手' : '左手'})`;
+  l.querySelector('input').onchange = (e) => K.setEquip({ [s]: e.target.checked });
+  $('#items').appendChild(l);
+});
+const ls = $('#load-static');
+ls.innerHTML = '<option value="">— 静止ポーズを選ぶ —</option>' + Object.keys(K.poses).map((n) => `<option>${n}</option>`).join('');
+ls.onchange = () => { if (!ls.value) return; loadStatic(K.poses[ls.value]); $('#pose-name').value = ls.value; refresh(); commit(); ls.value = ''; };
+
+/* ---------- 手・指 ---------- */
+let handSide = 'R';
+const LABELS = K.HAND_LABELS || {};
+Object.keys(K.HANDS).forEach((h) => {
+  const b = document.createElement('button');
+  b.textContent = LABELS[h] || h;
+  b.onclick = () => { P.hand[handSide] = detail(h); refresh(); commit(); };
+  $('#hand-presets').appendChild(b);
+});
+const fsl = $('#finger-sliders'), FN = ['人差し指', '中指', '薬指', '小指'], JN = ['付け根', '中', '先'];
+const H = () => P.hand[handSide];
+const f2 = (v) => v.toFixed(2);
+FN.forEach((fn, i) => {
+  JN.forEach((jn, k) => slider(fsl, `${fn} ${jn}`, 0, 1, 0.01, () => H().f[i][k], (v) => (H().f[i][k] = v), f2));
+  slider(fsl, `${fn} 開き`, -0.4, 0.4, 0.01, () => H().spr[i], (v) => (H().spr[i] = v), f2);
+});
+slider(fsl, '親指 向かい合わせ', 0, 1.5, 0.01, () => H().t.o, (v) => (H().t.o = v), f2);
+slider(fsl, '親指 ひねり', -1, 1, 0.01, () => H().t.r, (v) => (H().t.r = v), f2);
+JN.forEach((jn, k) => slider(fsl, `親指 ${jn}`, 0, 1, 0.01, () => H().t.f[k], (v) => (H().t.f[k] = v), f2));
+document.querySelectorAll('[data-hand]').forEach((b) => (b.onclick = () => {
+  handSide = b.dataset.hand;
+  document.querySelectorAll('[data-hand]').forEach((x) => x.classList.toggle('on', x === b));
+  refresh();
+}));
+$('#hand-mirror').onclick = () => { P.hand[handSide === 'R' ? 'L' : 'R'] = JSON.parse(JSON.stringify(H())); refresh(); commit(); toast('反対の手へコピーしました'); };
+$('#hand-json').onclick = () => { copyText(JSON.stringify(round(H(), 2))); toast('手の形をコピーしました'); };
+
+/* ---------- 腕 IK ・ドラッグ ---------- */
+const tc = new TransformControls(camera, hit);
+tc.setSize(0.7);
+scene.add(tc.getHelper());
+tc.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; if (!e.value) { if (tc.object && tc.object.userData.foot) footFromHandle(tc.object); commit(); } });
+tc.addEventListener('objectChange', () => { if (tc.object && tc.object.userData.foot) footFromHandle(tc.object); });
+const handles = [];
+const ball = (color, r) => new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.8 }));
+const targets = {};
+SIDES.forEach((s) => {
+  const t = ball(0x5ad8ff, 0.03);
+  t.renderOrder = 1000; t.visible = false; t.userData.reachSide = s;
+  scene.add(t);
+  K.ctx.reach['editor_' + s] = t;
+  targets[s] = t; handles.push(t);
+  const f = ball(0x7dff9a, 0.035);
+  f.renderOrder = 1000; f.userData.foot = s;
+  scene.add(f); handles.push(f);
+});
+const footHandles = handles.filter((h) => h.userData.foot);
+function footFromHandle(h) {
+  const s = h.userData.foot, p = K.figure.worldToLocal(h.position.clone());
+  P.feet[s][0] = p.x; P.feet[s][1] = p.z; P.feet[s][3] = Math.max(-0.05, p.y - ANKLE_H);
+  refreshers.forEach((f) => f());
+}
+function placeFootHandles() {
+  footHandles.forEach((h) => {
+    if (tc.object === h && tc.dragging) return;
+    const f = P.feet[h.userData.foot];
+    h.position.copy(K.figure.localToWorld(new THREE.Vector3(f[0], ANKLE_H + Math.max(0, f[3]), f[1])));
+    h.visible = $('#ik').checked;
+  });
+}
+// 目標の向き(腕 IK の約束): X = 握る棒の向き、Y = 手の甲の向き。今の手から逆算して置く
+function targetFromHand(s) {
+  const m = s === 'L' ? 1 : -1, hand = K.hands[s], t = targets[s];
+  K.root.updateMatrixWorld(true);
+  const q = hand.root.getWorldQuaternion(new THREE.Quaternion());
+  const Xh = new THREE.Vector3(1, 0, 0).applyQuaternion(q), Zh = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  const Xb = Zh.clone().multiplyScalar(-m), Up = Xh.clone().multiplyScalar(m);
+  t.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xb, Up, new THREE.Vector3().crossVectors(Xb, Up)));
+  (hand[t.userData.handPoint || 'grip'] || hand.grip).getWorldPosition(t.position);
+}
+const reachNames = Object.keys(K.ctx.reach).filter((n) => !n.startsWith('editor_'));
+SIDES.forEach((s) => {
+  const sel = $('#reach-' + s);
+  sel.innerHTML = '<option value="">なし(関節の角度)</option><option value="editor">ドラッグ目標</option>' + reachNames.map((n) => `<option value="${n}">${n}</option>`).join('');
+  sel.onchange = () => setReach(s, sel.value);
+});
+function setReach(s, v) {
+  const t = targets[s];
+  if (v === 'editor') { t.userData.handPoint = $('#hand-point').value; targetFromHand(s); P.reach[s] = 'editor_' + s; P.reachW[s] = 1; t.visible = true; tc.attach(t); }
+  else { P.reach[s] = v || null; P.reachW[s] = v ? 1 : 0; t.visible = false; if (tc.object === t) tc.detach(); }
+  $('#reach-' + s).value = v || '';
+  commit();
+}
+$('#hand-point').onchange = () => SIDES.forEach((s) => { targets[s].userData.handPoint = $('#hand-point').value; });
+// IK の結果(腕の関節の角度)をポーズに書き込み、IK を外す
+// IK は可動域を超えて手を合わせることがあるので、焼き込むときは可動域に収め、超えた関節を知らせる
+function bake() {
+  const C = K.getPose(), over = [];
+  SIDES.forEach((s) => {
+    if (!P.reach[s]) return;
+    ['shoulder', 'elbow', 'forearm', 'wrist'].forEach((n) => {
+      const nm = n + '_' + s, lim = JL[nm].lim;
+      P.j[nm] = C.j[nm].map((v, i) => {
+        const l = lim['xyz'[i]], c = Math.min(l[1], Math.max(l[0], v));
+        if (Math.abs(c - v) > 1) over.push(`${JL[nm].label} ${'XYZ'[i]} ${Math.round(v)}°→${Math.round(c)}°`);
+        return Math.round(c * 10) / 10;
+      });
+    });
+    setReach(s, '');
+  });
+  refresh(); commit();
+  toast(over.length ? '可動域を超えた関節を収めました: ' + over.join(' / ') : '腕の角度に焼き込みました');
+}
+$('#bake').onclick = bake;
+$('#reach-off').onclick = () => { SIDES.forEach((s) => setReach(s, '')); };
+
+/* ---------- クリックで選ぶ ---------- */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downAt = null;
+hit.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+hit.addEventListener('pointerup', (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || tc.dragging) return;
+  const r = hit.getBoundingClientRect();
+  ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const hits = ray.intersectObjects(handles.filter((h) => h.visible).concat($('#markers').checked ? K.markers : []), false);
+  const pick = hits[0];
+  if (!pick) return;
+  const o = pick.object;
+  if (o.userData.joint) {
+    // 同じ場所に重なった関節(肘と前腕ひねりなど)は、続けてクリックすると順に切り替わる
+    const P0 = o.getWorldPosition(new THREE.Vector3());
+    const same = hits.filter((h) => h.object.userData.joint && h.object.getWorldPosition(new THREE.Vector3()).distanceTo(P0) < 0.01).map((h) => h.object.userData.joint);
+    const i = same.indexOf(selJoint);
+    selectJoint(i >= 0 ? same[(i + 1) % same.length] : same[0]);
+  }
+  else { tc.attach(o); if (o.userData.foot) { tc.setMode('translate'); document.querySelector(`[data-foot="${o.userData.foot}"]`).click(); } }
+});
+
+/* ---------- キーフレーム ---------- */
+let frames = [], selFrame = -1, playing = false, playT = 0;
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = (x) => x * x * (3 - 2 * x);
+function framePose(t) {
+  if (!frames.length) return null;
+  const fr = frames.slice().sort((a, b) => a.t - b.t);
+  if (t <= fr[0].t || fr.length === 1) return fr[0].P;
+  let i = 0;
+  while (i < fr.length - 2 && t >= fr[i + 1].t) i++;
+  const A = fr[i].P, B = fr[i + 1].P, k = ease(Math.min(1, Math.max(0, (t - fr[i].t) / Math.max(1e-6, fr[i + 1].t - fr[i].t))));
+  const out = JSON.parse(JSON.stringify(A));
+  Object.keys(out.j).forEach((n) => (out.j[n] = out.j[n].map((v, x) => lerp(v, (B.j[n] || [0, 0, 0])[x], k))));
+  out.root = A.root.map((v, x) => lerp(v, B.root[x], k));
+  out.yaw = lerp(A.yaw, B.yaw, k); out.flip = lerp(A.flip, B.flip, k);
+  SIDES.forEach((s) => {
+    out.feet[s] = A.feet[s].map((v, x) => lerp(v, B.feet[s][x], k));
+    out.feet[s][3] += Math.sin(Math.PI * k) * Math.min(0.12, Math.hypot(B.feet[s][0] - A.feet[s][0], B.feet[s][1] - A.feet[s][1]) * 0.45); // 足が動くときは持ち上げる
+    out.hand[s] = detail(HC.blendHand(A.hand[s], B.hand[s], k));
+    out.reach[s] = k < 0.5 ? A.reach[s] : B.reach[s];
+    out.reachW[s] = lerp(A.reach[s] ? A.reachW[s] : 0, B.reach[s] ? B.reachW[s] : 0, k);
+  });
+  return out;
+}
+// フレームに入れるときは、ドラッグ目標の IK を関節の角度に直しておく(名前付きの目標はそのまま)
+function frameSnapshot() {
+  const S = snapshot(), C = K.getPose();
+  SIDES.forEach((s) => {
+    if (S.reach[s] !== 'editor_' + s) return;
+    ['shoulder', 'elbow', 'forearm', 'wrist'].forEach((n) => (S.j[n + '_' + s] = C.j[n + '_' + s].map((v) => Math.round(v * 10) / 10)));
+    S.reach[s] = null; S.reachW[s] = 0;
+  });
+  return S;
+}
+function renderFrames() {
+  const box = $('#frames');
+  box.innerHTML = '';
+  frames.sort((a, b) => a.t - b.t);
+  frames.forEach((f, i) => {
+    const d = document.createElement('div');
+    d.className = 'frame';
+    d.innerHTML = `<button class="${i === selFrame ? 'sel' : ''}">${i + 1}: ${f.name || 'k' + i}</button><input type="number" step="0.05" min="0" value="${f.t}" /><button title="消す">×</button>`;
+    const [b, inp, del] = d.children;
+    b.onclick = () => { selFrame = i; playing = false; restore(f.P); $('#scrub').value = f.t; $('#scrub-out').textContent = f.t.toFixed(2); renderFrames(); commit(); };
+    inp.onchange = () => { f.t = Math.max(0, +inp.value); renderFrames(); autosave(); };
+    del.onclick = () => { frames.splice(i, 1); selFrame = -1; renderFrames(); autosave(); };
+    box.appendChild(d);
+  });
+  const dur = frames.length ? frames[frames.length - 1].t : 2;
+  $('#scrub').max = Math.max(0.5, dur);
+}
+$('#scrub').oninput = () => {
+  const t = +$('#scrub').value; $('#scrub-out').textContent = t.toFixed(2);
+  const fp = framePose(t);
+  if (fp) { restore(fp); selFrame = -1; }
+};
+$('#key-add').onclick = () => {
+  const t = +$('#scrub').value;
+  frames = frames.filter((f) => Math.abs(f.t - t) > 1e-3);
+  frames.push({ t, name: $('#pose-name').value + '_' + frames.length, P: frameSnapshot() });
+  selFrame = -1; renderFrames(); autosave();
+  $('#scrub').max = Math.max(+$('#scrub').max, t + 0.5);
+  toast(`時刻 ${t.toFixed(2)} 秒にフレームを置きました`);
+};
+$('#key-set').onclick = () => { if (selFrame < 0) return toast('上書きするフレームを選んでください'); frames[selFrame].P = frameSnapshot(); autosave(); toast('上書きしました'); };
+$('#play').onclick = () => { if (frames.length < 2) return toast('フレームを 2 つ以上置いてください'); playing = !playing; playT = 0; $('#play').classList.toggle('on', playing); $('#play').textContent = playing ? '停止' : '再生'; };
+
+/* ---------- 書き出し・保存 ---------- */
+const r1 = (v, d) => +(+v).toFixed(d);
+function round(o, d) { return JSON.parse(JSON.stringify(o), (k, v) => (typeof v === 'number' ? r1(v, d) : v)); }
+const arr = (a) => '[' + a.join(', ') + ']';
+// 静止ポーズの書式(キャラのファイルの POSES にそのまま貼れる)
+function poseCode(name, S) {
+  const j = Object.entries(S.j).filter(([, a]) => a.some((v) => Math.abs(v) > 0.04)).map(([n, a]) => `${n}: ${arr(a.map((v) => r1(v, 1)))}`);
+  const lines = [`${name}: {`, `  root: ${arr(S.root.map((v) => r1(v, 3)))},`];
+  if (Math.abs(S.yaw) > 0.4) lines.push(`  yaw: ${Math.round(S.yaw)},`);
+  if (Math.abs(S.flip) > 0.4) lines.push(`  flip: ${Math.round(S.flip)},`);
+  lines.push('  j: {');
+  for (let i = 0; i < j.length; i += 4) lines.push('    ' + j.slice(i, i + 4).join(', ') + ',');
+  lines.push('  },');
+  lines.push(`  feet: { L: ${arr(S.feet.L.map((v, i) => r1(v, i === 0 || i === 1 || i === 3 ? 3 : 0)))}, R: ${arr(S.feet.R.map((v, i) => r1(v, i === 0 || i === 1 || i === 3 ? 3 : 0)))} },`);
+  lines.push(`  hand: { L: ${JSON.stringify(round(S.hand.L, 2))}, R: ${JSON.stringify(round(S.hand.R, 2))} },`);
+  lines.push('},');
+  const reach = SIDES.filter((s) => S.reach[s] && !S.reach[s].startsWith('editor_')).map((s) => `P.reach.${s} = '${S.reach[s]}'; P.reachW.${s} = 1;`);
+  if (reach.length) lines.push(`// 腕 IK の目標はモードの中で指定する: ${reach.join(' ')}`);
+  return lines.join('\n');
+}
+$('#export-pose').onclick = () => { $('#out').value = poseCode($('#pose-name').value || 'myPose', frameSnapshot()); toast('静止ポーズを書き出しました'); };
+$('#export-seq').onclick = () => {
+  if (!frames.length) return toast('キーフレームがありません');
+  const nm = $('#pose-name').value || 'myMove';
+  const names = frames.map((f, i) => f.name || `${nm}_${i}`);
+  const out = ['// POSES に追加する静止ポーズ'];
+  frames.forEach((f, i) => out.push(poseCode(names[i], f.P)));
+  out.push('', '// modes(h) に追加するモード', `${nm}: (P, t) => {`, `  seq(P, t, [${frames.map((f, i) => `[${r1(f.t, 2)}, '${names[i]}']`).join(', ')}]);`, '},',
+    '', '// actions に追加(終わると構えへ戻る)', `${nm}: { dur: ${r1(frames[frames.length - 1].t, 2)}, next: 'idle', blend: 0.2 },`);
+  $('#out').value = out.join('\n');
+  toast('技を書き出しました');
+};
+function copyText(t) { try { navigator.clipboard.writeText(t); } catch (e) { /* 失敗しても欄から選んでコピーできる */ } }
+$('#copy-out').onclick = () => { copyText($('#out').value); toast('コピーしました'); };
+const docState = () => ({ app: 'pose-editor', char: CHAR, name: $('#pose-name').value, pose: snapshot(), frames });
+function loadDoc(d) {
+  if (d.pose) restore(d.pose);
+  frames = d.frames || []; selFrame = -1; renderFrames();
+  if (d.name) $('#pose-name').value = d.name;
+  commit();
+}
+$('#import').onclick = () => {
+  try {
+    const d = JSON.parse($('#out').value);
+    if (d.app === 'pose-editor') loadDoc(d); else { loadStatic(d); refresh(); commit(); }
+    toast('読み込みました');
+  } catch (e) { toast('JSON として読めませんでした(書き出したコードではなく、保存した JSON を貼ってください)'); }
+};
+$('#download').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(docState(), null, 1)], { type: 'application/json' }));
+  a.download = `${CHAR}-${$('#pose-name').value || 'pose'}.json`;
+  a.click();
+};
+const STORE = 'pose-editor:' + CHAR;
+const store = { get() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { return {}; } }, set(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); } catch (e) { /* 保存できない環境では何もしない */ } } };
+function listSaved() { const s = store.get(); $('#saved').innerHTML = Object.keys(s.slots || {}).map((n) => `<option>${n}</option>`).join('') || '<option value="">(保存はまだありません)</option>'; }
+$('#save-local').onclick = () => { const s = store.get(); s.slots = s.slots || {}; s.slots[$('#pose-name').value || 'pose'] = docState(); store.set(s); listSaved(); toast('ブラウザに保存しました'); };
+$('#load-local').onclick = () => { const s = store.get(), d = s.slots && s.slots[$('#saved').value]; if (d) { loadDoc(d); toast('開きました'); } };
+$('#del-local').onclick = () => { const s = store.get(); if (s.slots) delete s.slots[$('#saved').value]; store.set(s); listSaved(); };
+function autosave() { const s = store.get(); s.auto = docState(); store.set(s); }
+
+/* ---------- 参考画像 ---------- */
+const ref = $('#ref');
+let refFlip = 1;
+const refState = { op: 0.4, sc: 1, x: 0, y: 0 };
+function layoutRef() {
+  const r = hit.getBoundingClientRect();
+  if (!ref.naturalWidth) return;
+  const s = Math.min(r.width / ref.naturalWidth, r.height / ref.naturalHeight) * refState.sc;
+  const w = ref.naturalWidth * s, h = ref.naturalHeight * s;
+  Object.assign(ref.style, { width: w + 'px', height: h + 'px', left: r.left + (r.width - w) / 2 + refState.x * r.width / 2 + 'px', top: r.top + (r.height - h) / 2 - refState.y * r.height / 2 + 'px',
+    opacity: refState.op, transform: `scaleX(${refFlip})` });
+}
+[['ref-op', 'op'], ['ref-sc', 'sc'], ['ref-x', 'x'], ['ref-y', 'y']].forEach(([id, k]) => {
+  const inp = $('#' + id), out = inp.nextElementSibling;
+  const show = () => (out.textContent = (+inp.value).toFixed(2));
+  inp.oninput = () => { refState[k] = +inp.value; show(); layoutRef(); };
+  show();
+});
+function loadRef(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const rd = new FileReader();
+  rd.onload = () => { ref.src = rd.result; ref.style.display = 'block'; ref.onload = layoutRef; };
+  rd.readAsDataURL(file);
+}
+$('#ref-file').onchange = (e) => loadRef(e.target.files[0]);
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => { e.preventDefault(); loadRef(e.dataTransfer.files[0]); });
+$('#ref-flip').onclick = () => { refFlip *= -1; layoutRef(); };
+$('#ref-hide').onclick = () => { ref.style.display = ref.style.display === 'none' && ref.src ? 'block' : 'none'; };
+$('#ref-clear').onclick = () => { ref.removeAttribute('src'); ref.style.display = 'none'; };
+
+/* ---------- 画面の配置と描画 ---------- */
+const views = { main: null, side: [] };
+function layout() {
+  const pw = innerWidth > 760 ? 330 : 0, W = innerWidth - pw, Hh = innerWidth > 760 ? innerHeight : innerHeight * 0.55;
+  renderer.setSize(W, Hh);
+  const mainW = quad ? Math.round(W * 0.66) : W;
+  views.main = { x: 0, y: 0, w: mainW, h: Hh };
+  views.side = quad ? [0, 1, 2].map((i) => ({ x: mainW, y: Math.round((Hh / 3) * i), w: W - mainW, h: Math.round(Hh / 3) })) : [];
+  Object.assign(hit.style, { width: mainW + 'px', height: Hh + 'px' });
+  camera.aspect = mainW / Hh; camera.updateProjectionMatrix();
+  views.side.forEach((v, i) => {
+    const c = orthos[i], half = 1.0, a = v.w / v.h;
+    Object.assign(c, { left: -half * a, right: half * a, top: half, bottom: -half }); c.updateProjectionMatrix();
+    Object.assign($('#lab-' + i).style, { left: v.x + 6 + 'px', top: v.y + 6 + 'px', display: 'block' });
+  });
+  [0, 1, 2].forEach((i) => { if (!quad) $('#lab-' + i).style.display = 'none'; });
+  Object.assign($('#lab-main').style, { left: '8px', top: '8px' });
+  layoutRef();
+}
+$('#quad').onclick = () => { quad = !quad; $('#quad').classList.toggle('on', quad); layout(); };
+addEventListener('resize', layout);
+
+let time = 0, prev = performance.now();
+function simulate(dt) {
+  time += dt;
+  if (playing && frames.length > 1) {
+    const dur = frames[frames.length - 1].t;
+    playT += dt;
+    if (playT > dur) { if ($('#loop').checked) playT %= dur; else { playT = dur; playing = false; $('#play').classList.remove('on'); $('#play').textContent = '再生'; } }
+    const fp = framePose(playT);
+    Object.assign(P, JSON.parse(JSON.stringify(fp))); apply();
+    $('#scrub').value = playT; $('#scrub-out').textContent = playT.toFixed(2);
+  }
+  K.update(dt, time, camera);
+  placeFootHandles();
+}
+function draw() {
+  const H = renderer.domElement.height / renderer.getPixelRatio();
+  renderer.setScissorTest(true);
+  const vp = (v) => { renderer.setViewport(v.x, H - v.y - v.h, v.w, v.h); renderer.setScissor(v.x, H - v.y - v.h, v.w, v.h); };
+  vp(views.main); renderer.render(scene, camera);
+  if (quad) {
+    const helper = tc.getHelper(), hv = helper.visible;
+    helper.visible = false;
+    views.side.forEach((v, i) => { vp(v); renderer.render(scene, orthos[i]); });
+    helper.visible = hv;
+  }
+}
+function loop(now) {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+  controls.update();
+  simulate(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 始める ---------- */
+K.setMode('idle');
+const saved = store.get();
+if (saved.auto && saved.auto.pose) loadDoc(saved.auto); else { loadStatic(K.poses.idle); commit(); }
+K.setExternalPose(P);
+listSaved(); renderFrames(); selectJoint(selJoint); refresh();
+layout();
+requestAnimationFrame(loop);
+
+// 撮影ツール(tools/shoot.mjs)から使う
+window.__studio = {
+  K, P, camera, controls, scene,
+  step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) simulate(dt); draw(); },
+  prepare: () => { K.resetPhysics(); },
+  editor: { loadStatic: (n) => { loadStatic(K.poses[n]); refresh(); commit(); }, selectJoint, setReach, bake, mirror, setQuad: (v) => { quad = !!v; layout(); }, frames: () => frames, restore, snapshot, refresh },
+};
+  </script>
+</body>
+</html>
