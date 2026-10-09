@@ -121,11 +121,12 @@ knight.setWind(steed.getSpeed() * 0.6);
 - 目の画像差し替え: `setEyeImages({ iris: 'iris.png' })` で虹彩だけ画像にできます(まぶた・表情・まばたきは描画のまま)。色ごとに `{ crimson: …, indigo: … }`、表情ごとに両目まるごと `full: { normal: …, smile: …, closed: … }`(512:232)も指定できます。透過 PNG・虹彩 256px 以上を推奨します
 - マント: 裾がほつれた布(背中に家紋)
 - カラバリ: 紅 / 藍 / 緑 / 紫(目の色も変わります)
-- モーション: 待機・構え・隠密(忍び足)・歩く・走る。跳躍・空中攻撃・手裏剣投げは次の段階で追加予定です
+- モーション: 待機・構え・隠密(低い姿勢のしのび足)・歩く・走る
+- 技: 跳躍(しゃがんで踏み切り、膝を抱えて前宙、着地で衝撃を吸収)・空中攻撃(跳んで振りかぶり、落ちながら斬り下ろす)・斬撃(上段から踏み込んで斬る)・手裏剣(左手の横投げで 3 枚を扇状に放つ。飛ぶ手裏剣はキャラの親に置かれ、1.1 秒で消えます)。技の間は自動で怒り目になります
 
 ```js
 const kunoichi = KunoichiModel.create(THREE, scene, { scale: 2.4 });
-kunoichi.setMode('guard');      // 'idle' | 'guard' | 'stealth' | 'walk' | 'run'
+kunoichi.setMode('guard');      // 'idle' | 'guard' | 'stealth' | 'walk' | 'run' | 技: 'jump' | 'airAttack' | 'slash' | 'shuriken'
 kunoichi.setExpr('smile');      // 'normal' | 'surprise' | 'angry' | 'smile' | 'sad'
 kunoichi.setColor('indigo');    // 'crimson' | 'indigo' | 'green' | 'purple'
 kunoichi.setIrisStyle('magic'); // 'normal' | 'sparkle' | 'magic'
@@ -158,6 +159,8 @@ const SPEC = {
 };
 const blackKnight = HumanoidCore.create(THREE, scene, {}, SPEC);
 ```
+
+共通基盤のヘルパー(`modes(h)` の `h`)には `gait`(歩行の仕組み。`WALK` / `RUN` を元に速さ・歩幅・腰の低さを変えて使える)、`freeArm`、`seq` などがあります。ポーズの `flip`(度)で腰を中心に前へ回ります(宙返り)。
 
 手足の長さを変えたいときは `joints.base` / `joints.side`(関節表)を書き換えます。IK は骨の長さを関節の位置から読むので、そのまま動きます。腕の静止ポーズは `tools/optimize-arms.mjs` で出し直せます。
 

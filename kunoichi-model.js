@@ -246,6 +246,45 @@
       },
       feet: { L: [0.11, 0.2, 15], R: [-0.13, -0.18, -35] },
     },
+    // 上段(振りかぶり): 刀を頭上へ、切っ先は後ろ上
+    jodan: {
+      root: [0, -0.06, 0],
+      j: {
+        hips: [2, 12, 0], spine: [-6, -6, 0], chest: [-6, -4, 0], neck: [6, -2, 0], head: [4, 0, 0],
+        shoulder_L: [-120, 10, 20], elbow_L: [-60, 0, 0],
+        shoulder_R: [-112, 21, 15], elbow_R: [-94, 0, 0], forearm_R: [0, -22, 0], wrist_R: [64, 0, 0],
+      },
+      feet: { L: [0.11, 0.16, 15], R: [-0.13, -0.16, -30] },
+    },
+    // 斬り下ろしの終わり: 踏み込んで低く、切っ先は前の下
+    slashLow: {
+      root: [0, -0.24, 0.06],
+      j: {
+        hips: [16, 18, 0], spine: [14, -8, 0], chest: [8, -8, 0], neck: [-12, -2, 0], head: [-10, 0, 0],
+        shoulder_L: [-50, 20, 20], elbow_L: [-40, 0, 0],
+        shoulder_R: [-22, 12, 15], elbow_R: [-92, 0, 0], forearm_R: [0, -88, 0], wrist_R: [75, -8, 0],
+      },
+      feet: { L: [0.12, 0.34, 12], R: [-0.14, -0.3, -30, 0, 28] },
+    },
+    // 手裏剣: 左手を右肩の前へ引き(振りかぶり)、体を左へひねりながら横へ投げ放つ
+    throwWind: {
+      root: [0, -0.1, 0],
+      j: {
+        hips: [4, -14, 0], spine: [4, -14, 0], chest: [2, -16, 0], neck: [-4, 22, 0], head: [-4, 20, 0],
+        shoulder_L: [-80, -40, 0], elbow_L: [-125, 0, 0], forearm_L: [0, -40, 0], wrist_L: [20, 0, -10],
+        shoulder_R: [-10, -19, -4], elbow_R: [-9, 0, 0], forearm_R: [0, 14, 0], wrist_R: [62, -4, -8],
+      },
+      feet: { L: [0.12, 0.14, 20], R: [-0.13, -0.14, -25] },
+    },
+    throwRelease: {
+      root: [0, -0.12, 0.02],
+      j: {
+        hips: [6, 14, 0], spine: [6, 10, 0], chest: [4, 12, 0], neck: [-6, -18, 0], head: [-4, -14, 0],
+        shoulder_L: [-88, 10, 30], elbow_L: [-8, 0, 0], forearm_L: [0, -20, 0], wrist_L: [-10, 0, 10],
+        shoulder_R: [-10, -19, -4], elbow_R: [-9, 0, 0], forearm_R: [0, 14, 0], wrist_R: [62, -4, -8],
+      },
+      feet: { L: [0.12, 0.2, 20], R: [-0.13, -0.14, -25, 0, 12] },
+    },
     stealth: {
       root: [0, -0.3, 0],
       j: {
@@ -296,7 +335,7 @@
       M.mask = new THREE.MeshStandardMaterial({ color: C(0x2c2a36), roughness: 0.65, side: THREE.DoubleSide });
       M.leather = new THREE.MeshStandardMaterial({ color: C(0x4a3028), roughness: 0.7 });
       // 刀身は発光させない(共通基盤の色替えはエネルギー刃用の素材を発光色に塗るので、刀は別の素材にする)
-      M.katana = new THREE.MeshPhysicalMaterial({ color: C(0xb8c0ca), metalness: 1, roughness: 0.24, side: THREE.DoubleSide });
+      M.katana = new THREE.MeshPhysicalMaterial({ color: C(0x9aa2ac), metalness: 0.9, roughness: 0.32, side: THREE.DoubleSide });
       M.cloth = new THREE.MeshStandardMaterial({ roughness: 0.88, side: THREE.DoubleSide, alphaTest: 0.5 });
       M.hamon = new THREE.MeshPhysicalMaterial({ color: C(0xffffff), metalness: 0.6, roughness: 0.05 });
       ctx.eyeCanvas = document.createElement('canvas');
@@ -515,6 +554,33 @@
       add(tanto, new THREE.CylinderGeometry(0.011, 0.012, 0.1, 10), M.suit, [0, -0.21, 0]);
       add(tanto, torus(0.013, 0.003, Math.PI * 2, 6, 12), M.gold, [0, -0.162, 0], [Math.PI / 2, 0, 0]);
 
+      // 手裏剣(四方手裏剣)。投げる直前だけ左手に持ち、放つと飛び道具として飛ぶ
+      const starGeo = (() => {
+        const sh = new THREE.Shape();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2, r = i % 2 ? 0.018 : 0.062;
+          const x = Math.sin(a) * r, y = Math.cos(a) * r;
+          if (i === 0) sh.moveTo(x, y); else sh.lineTo(x, y);
+        }
+        sh.closePath();
+        sh.holes.push(new THREE.Path().absarc(0, 0, 0.008, 0, Math.PI * 2, true));
+        const g = extrude(sh, 0.004, 0.0015);
+        g.translate(0, 0, -0.002);
+        return g;
+      })();
+      const glowRing = torus(0.03, 0.0035, Math.PI * 2, 6, 24);
+      // 飛ぶ手裏剣には発光色の輪を付けて、遠くでも軌跡が見えるようにする
+      const makeStar = (lit) => {
+        const m = new THREE.Mesh(starGeo, M.katana); m.castShadow = true;
+        if (lit) m.add(new THREE.Mesh(glowRing, M.glowSoft));
+        return m;
+      };
+      const held = makeStar();
+      held.position.set(0, -0.015, 0.03); held.rotation.set(0, Math.PI / 2, 0.4);
+      held.visible = false;
+      ctx.hands.L.grip.add(held);
+      ctx.shuriken = { held, make: makeStar, flying: [], t: -1, live: 0, thrown: false };
+
       // マント(胸の後ろの細い弧に固定、破れ裾)
       ctx.cape = { anchor: 'chest', cols: 13, rows: 20, length: 0.86, flare: 0.7, topY: 0.24,
         pins: (u) => [u * 0.16, 0.22 - u * u * 0.02, -0.06 - 0.07 * (1 - u * u)] };
@@ -522,28 +588,96 @@
 
     poses: POSES,
     modes(h) {
-      const { fromStatic, breathe, addJ } = h;
+      const { fromStatic, breathe, addJ, seq, smooth, clamp, ease, ctx } = h;
+      const win = (t, a, b) => smooth((t - a) / (b - a)); // a→b で 0→1
+      const bump = (t, a, b) => (t > a && t < b ? Math.sin(Math.PI * (t - a) / (b - a)) : 0);
+      const twoHands = (P) => { P.reach.L = 'katanaGrip'; P.reachW.L = 1; P.hand.L = { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 }; };
+      const mood = (e) => { ctx.autoExpr = e; ctx.autoLive = 3; }; // 技の間だけ表情を変える
+      // 宙に浮く: 腰を h だけ上げ、足は tuck だけさらに引き上げる(膝を抱える)
+      const air = (P, hgt, tuck) => {
+        P.root[1] += hgt;
+        ['L', 'R'].forEach((s) => { const f = P.feet[s]; f[3] = Math.max(f[3], 0) + hgt + tuck * 0.34; f[1] += tuck * 0.1; f[4] = 20 * tuck; });
+      };
+      // しゃがみ込み(踏み切り前・着地): 腰を落として前へ倒す
+      const squat = (P, c) => {
+        P.root[1] -= 0.26 * c; P.root[2] -= 0.03 * c;
+        addJ(P, 'hips', 28 * c); addJ(P, 'spine', 10 * c); addJ(P, 'neck', -14 * c); addJ(P, 'head', -10 * c);
+      };
       return {
         // 構え: 中段。右手で柄の鍔元、左手を柄頭側に添える(腕 IK)
         guard: (P, t) => {
           fromStatic(P, 'guard'); breathe(P, t, 0.6);
-          P.reach.L = 'katanaGrip'; P.reachW.L = 1;
-          P.hand.L = { c: h.HANDS.grip.c.slice(), th: h.HANDS.grip.th, sp: 0 };
+          twoHands(P);
           P.look = 0.5;
         },
-        // 隠密: 低く構えてしのび足
+        // 隠密: 低い姿勢のしのび足(歩行の仕組みをゆっくり・低く・小さく使う)
         stealth: (P, t) => {
           fromStatic(P, 'stealth');
-          const w = t * 2.6, s = Math.sin(w), c = Math.cos(w);
-          P.feet.L = [0.13, 0.05 + 0.13 * s, 20, Math.max(0, c) * 0.035, 0, 0];
-          P.feet.R = [-0.12, -0.08 - 0.13 * s, -20, Math.max(0, -c) * 0.035, 10, 0];
-          P.root[1] += 0.01 * Math.cos(2 * w);
-          addJ(P, 'hips', 0, 4 * s); addJ(P, 'head', 0, -6 * s);
-          P.look = 0.6;
+          h.gait(P, t, Object.assign({}, h.WALK, { freq: 0.5, stride: 0.4, lift: 0.07, low: 0.3, heel: 4, toeOff: 12, heelOff: 0.7,
+            twist: 4, drop: 2, sway: 0.025, bob: 0.006, lean: 0, pitch: 0.5, width: 1.15, toeOut: 16, zOff: -0.02, arms: false }));
+          addJ(P, 'head', 0, 10 * Math.sin(t * 0.7), 0); // 辺りをうかがう
+          P.look = 0.3;
+        },
+        // 跳躍: しゃがんで踏み切り、膝を抱えて前宙、着地で衝撃を吸収
+        jump: (P, t) => {
+          fromStatic(P, 'idle');
+          h.freeArm(P, 'L', 1);
+          const c = t < 0.26 ? win(t, 0, 0.26) : 1 - win(t, 0.26, 0.36);
+          const u = clamp((t - 0.33) / 0.8, 0, 1), hgt = t > 0.33 && t < 1.13 ? 4 * u * (1 - u) * 0.75 : 0;
+          const tuck = bump(t, 0.42, 1.08);
+          const land = t < 1.13 ? 0 : t < 1.24 ? win(t, 1.13, 1.24) : 1 - win(t, 1.24, 1.75);
+          squat(P, c + land * 0.85);
+          air(P, hgt, tuck);
+          P.flip = 360 * ease(clamp((t - 0.45) / 0.58, 0, 1));
+          addJ(P, 'hips', 30 * tuck); addJ(P, 'spine', 22 * tuck); addJ(P, 'neck', 10 * tuck);
+          // 腕: 踏み切り前に後ろへ引き、踏み切りで振り上げ、宙では膝を抱える
+          const up = bump(t, 0.24, 0.5);
+          addJ(P, 'shoulder_L', 45 * c - 130 * up - 40 * tuck, 0, 10 * up); addJ(P, 'elbow_L', -95 * tuck);
+          addJ(P, 'shoulder_R', 30 * c - 60 * up - 30 * tuck); addJ(P, 'elbow_R', -60 * tuck);
+          if (t > 0.26 && t < 0.36) ['L', 'R'].forEach((s) => (P.feet[s][4] = 30 * bump(t, 0.26, 0.38))); // つま先で蹴る
+          P.look = 0;
+        },
+        // 空中攻撃: 跳び上がって振りかぶり、落ちながら斬り下ろして低く着地
+        airAttack: (P, t) => {
+          seq(P, t, [[0, 'guard'], [0.24, 'guard'], [0.6, 'jodan'], [0.82, 'jodan'], [1.05, 'slashLow'], [1.6, 'slashLow'], [2.1, 'guard']]);
+          twoHands(P);
+          const c = t < 0.24 ? win(t, 0, 0.24) : 1 - win(t, 0.24, 0.32);
+          const u = clamp((t - 0.3) / 0.88, 0, 1), hgt = t > 0.3 && t < 1.18 ? 4 * u * (1 - u) * 0.95 : 0;
+          const tuck = bump(t, 0.36, 1.1) * 0.6;
+          const land = t < 1.18 ? 0 : t < 1.3 ? win(t, 1.18, 1.3) : 1 - win(t, 1.3, 1.9);
+          squat(P, c * 0.8 + land * 0.6);
+          air(P, hgt, tuck);
+          P.flip = -20 * bump(t, 0.5, 0.85) + 18 * bump(t, 0.85, 1.25); // 振りかぶりで反り、斬り下ろしで前へ
+          P.trail = t > 0.8 && t < 1.2 ? 1 : 0;
+          if (t > 0.2 && t < 1.7) mood('angry');
+          P.look = 0;
+        },
+        // 斬撃: 上段から踏み込んで斬り下ろす
+        slash: (P, t) => {
+          seq(P, t, [[0, 'guard'], [0.32, 'jodan'], [0.42, 'jodan'], [0.62, 'slashLow'], [0.9, 'slashLow'], [1.35, 'guard']]);
+          twoHands(P);
+          P.trail = t > 0.47 && t < 0.72 ? 1 : 0;
+          if (t < 1.1) mood('angry');
+          P.look = 0;
+        },
+        // 手裏剣投げ: 左手を引いて横投げ。手を離す瞬間(0.56 秒)に 3 枚を扇状に放つ
+        shuriken: (P, t) => {
+          seq(P, t, [[0, 'idle'], [0.12, 'idle'], [0.46, 'throwWind'], [0.6, 'throwRelease'], [0.95, 'throwRelease'], [1.45, 'idle']]);
+          P.hand.L = t < 0.56 ? { c: [0.7, 0.75, 0.9, 0.95], th: 0.75, sp: 0 } : { c: [0.1, 0.15, 0.2, 0.25], th: 0.2, sp: 0.6 };
+          const S = ctx.shuriken;
+          S.t = t; S.live = 3;
+          if (t < 1.2) mood('angry');
+          P.look = 0;
         },
       };
     },
-    actions: {},
+    actions: {
+      jump: { dur: 1.75, next: 'idle', blend: 0.2 },
+      airAttack: { dur: 2.1, next: 'guard', blend: 0.2 },
+      slash: { dur: 1.35, next: 'guard', blend: 0.2 },
+      shuriken: { dur: 1.45, next: 'idle', blend: 0.2 },
+    },
+
 
     // 連動パーツ: 肩当ては腕に、草摺は太ももに部分追従
     linked(ctx) {
@@ -575,12 +709,15 @@
       let open = 1;
       if (ctx.blinkT > 0) { ctx.blinkT -= dt; open = Math.abs(Math.cos(Math.PI * Math.max(0, ctx.blinkT) / 0.15)); }
       if (!ctx.blinkOn) open = 1;
-      const key = [ctx.expr, open.toFixed(1), (ctx.iris || []).join(), ctx.irisStyle, ctx.colorKey, ctx.eyeImgVer].join('|');
+      let expr = ctx.expr;
+      if (ctx.autoLive > 0) { ctx.autoLive--; expr = ctx.autoExpr; } // 技の間の表情
+      const key = [expr, open.toFixed(1), (ctx.iris || []).join(), ctx.irisStyle, ctx.colorKey, ctx.eyeImgVer].join('|');
       if (key !== ctx.eyeKey) {
         ctx.eyeKey = key;
-        drawEyes(ctx.eyeCanvas.getContext('2d'), ctx.iris || COLORS.crimson.iris, ctx.expr, open, { style: ctx.irisStyle, images: eyeImagesFor(ctx) });
+        drawEyes(ctx.eyeCanvas.getContext('2d'), ctx.iris || COLORS.crimson.iris, expr, open, { style: ctx.irisStyle, images: eyeImagesFor(ctx) });
         ctx.eyeTex.needsUpdate = true;
       }
+      updateShuriken(ctx, dt);
     },
 
     api(ctx, api) {
@@ -590,6 +727,7 @@
       if (ctx.options.eyeImages) setEyeImages(ctx, ctx.options.eyeImages);
       return {
         katana: ctx.items.R.obj,
+        shuriken: ctx.shuriken,
         setExpr: (e) => { if (EXPRESSIONS.indexOf(e) >= 0) ctx.expr = e; },
         getExpr: () => ctx.expr || 'normal',
         setBlink: (on) => { ctx.blinkOn = !!on; },
@@ -601,6 +739,42 @@
     },
   };
   const EXPRESSIONS = ['normal', 'surprise', 'angry', 'smile', 'sad'];
+
+  /* 手裏剣: 投げる動きの間は左手に持ち、手を離す瞬間に 3 枚を扇状に放つ。
+     飛んでいる手裏剣はキャラの親(ワールド側)に置くので、キャラが動いても置いていかれない */
+  const RELEASE = 0.56, STAR_SPEED = 14, STAR_LIFE = 1.1;
+  function updateShuriken(ctx, dt) {
+    const S = ctx.shuriken, T = ctx.THREE;
+    if (!S) return;
+    const active = S.live > 0;
+    S.live = Math.max(0, S.live - 1);
+    if (active && S.t < 0.3) S.thrown = false;
+    S.held.visible = active && S.t > 0.14 && S.t < RELEASE;
+    const space = ctx.root.parent || ctx.root;
+    const ws = ctx.model.getWorldScale(new T.Vector3()).x, ps = space.getWorldScale(new T.Vector3()).x;
+    if (active && !S.thrown && S.t >= RELEASE) {
+      S.thrown = true;
+      const p0 = S.held.getWorldPosition(new T.Vector3());
+      const fwd = new T.Vector3(0, 0, 1).applyQuaternion(ctx.J.chest.getWorldQuaternion(new T.Quaternion()));
+      fwd.y = -0.03; fwd.normalize();
+      [-1, 0, 1].forEach((k) => {
+        const m = S.make(true);
+        m.scale.setScalar(ws / ps);
+        space.add(m);
+        const v = fwd.clone().applyAxisAngle(new T.Vector3(0, 1, 0), k * 0.13).multiplyScalar(STAR_SPEED * ws);
+        S.flying.push({ m, p: p0.clone(), v, life: 0, spin: k });
+      });
+    }
+    S.flying = S.flying.filter((f) => {
+      f.life += dt;
+      if (f.life > STAR_LIFE) { space.remove(f.m); return false; }
+      f.v.y -= 0.6 * ws * dt;
+      f.p.addScaledVector(f.v, dt);
+      f.m.position.copy(space.worldToLocal(f.p.clone()));
+      f.m.rotation.set(-Math.PI / 2 + 0.15, 0, f.spin + f.life * 42);
+      return true;
+    });
+  }
 
   /* 目の画像。描いた目の代わりに画像を使う(透過 PNG 推奨)
      spec = {
@@ -644,11 +818,12 @@
       desc: '月夜に紛れる女忍。フードとマスクで顔を覆い、大きな目だけを見せる。6.5頭身・156cm。刀(構えは両手持ち)・破れ裾のマント・前髪とマフラーの物理',
       create: 'create(THREE, parent, options) → { root, setMode, update, setColor, setExpr, ... }',
       requires: ['humanoid-core.js'],
-      modes: ['idle', 'guard', 'stealth', 'walk', 'run'],
+      modes: ['idle', 'guard', 'stealth', 'walk', 'run', 'jump', 'airAttack', 'slash', 'shuriken'],
       expressions: EXPRESSIONS,
       colors: Object.keys(COLORS),
       height: 1.56,
       modeLabels: { idle: '待機', guard: '構え', stealth: '隠密', walk: '歩く', run: '走る' },
+      actionLabels: { jump: '跳躍', airAttack: '空中攻撃', slash: '斬撃', shuriken: '手裏剣' },
       expressionLabels: { normal: '通常', surprise: '驚き', angry: '怒り', smile: '笑い', sad: '悲しみ' },
       irisStyleLabels: { normal: '瞳: 通常', sparkle: '瞳: 星空', magic: '瞳: 魔法陣' },
       irisStyles: IRIS_STYLES,

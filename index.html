@@ -277,7 +277,7 @@ function button(parent, label, onClick, cls = '') {
 const group = (sel, b) => document.querySelectorAll(`${sel} button`).forEach((x) => x.classList.toggle('on', x === b));
 
 const MODE_LABELS = Model.info.modeLabels || { idle: '待機', guard: '構え', block: '防御', visor: '素顔', walk: '歩く', run: '走る' };
-const ACTION_LABELS = Object.fromEntries(Object.entries({ spin: '回転斬り', charge: '突進' }).filter(([m]) => K.ACTIONS[m]));
+const ACTION_LABELS = Object.fromEntries(Object.entries(Object.assign({ spin: '回転斬り', charge: '突進' }, Model.info.actionLabels)).filter(([m]) => K.ACTIONS[m]));
 $('#char-title').textContent = CHARS[CHAR].title;
 $('#char-sub').textContent = CHARS[CHAR].sub;
 document.title = CHAR === 'knight' ? 'Cyber Knight' : 'Kunoichi';

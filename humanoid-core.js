@@ -414,7 +414,7 @@
       const STATIC = spec.poses;
       const JNAMES = JOINTS.map((j) => j.name);
       function newPose() {
-        const P = { j: {}, root: [0, 0, 0], yaw: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0, reach: { L: null, R: null }, reachW: { L: 0, R: 0 } };
+        const P = { j: {}, root: [0, 0, 0], yaw: 0, flip: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0, reach: { L: null, R: null }, reachW: { L: 0, R: 0 } };
         JNAMES.forEach((n) => (P.j[n] = [0, 0, 0]));
         ['L', 'R'].forEach((s) => (P.hand[s] = { c: HANDS.relax.c.slice(), th: HANDS.relax.th, sp: HANDS.relax.sp }));
         return P;
@@ -422,7 +422,7 @@
       function copyPose(Q, P) {
         JNAMES.forEach((n) => { const a = P.j[n] || [0, 0, 0]; Q.j[n][0] = a[0]; Q.j[n][1] = a[1]; Q.j[n][2] = a[2]; });
         for (let i = 0; i < 3; i++) Q.root[i] = P.root[i];
-        Q.yaw = P.yaw; Q.look = P.look; Q.trail = P.trail;
+        Q.yaw = P.yaw; Q.flip = P.flip || 0; Q.look = P.look; Q.trail = P.trail;
         const pr = P.reach || {}, pw = P.reachW || {};
         Q.reach = { L: pr.L || null, R: pr.R || null }; Q.reachW = { L: pw.L || 0, R: pw.R || 0 };
         ['L', 'R'].forEach((s) => {
@@ -435,6 +435,7 @@
         const S = STATIC[name];
         JNAMES.forEach((n) => { const a = S.j[n] || [0, 0, 0]; P.j[n][0] = a[0]; P.j[n][1] = a[1]; P.j[n][2] = a[2]; });
         for (let i = 0; i < 3; i++) P.root[i] = S.root[i];
+        P.flip = S.flip || 0;
         ['L', 'R'].forEach((s) => { P.feet[s] = S.feet[s].slice(); while (P.feet[s].length < 6) P.feet[s].push(0); });
         return P;
       }
@@ -442,7 +443,7 @@
       function blendPose(out, A, B, k) {
         JNAMES.forEach((n) => { for (let i = 0; i < 3; i++) out.j[n][i] = lerp(A.j[n][i], B.j[n][i], k); });
         for (let i = 0; i < 3; i++) out.root[i] = lerp(A.root[i], B.root[i], k);
-        out.yaw = lerp(A.yaw, B.yaw, k); out.look = lerp(A.look, B.look, k); out.trail = lerp(A.trail, B.trail, k);
+        out.yaw = lerp(A.yaw, B.yaw, k); out.flip = lerp(A.flip || 0, B.flip || 0, k); out.look = lerp(A.look, B.look, k); out.trail = lerp(A.trail, B.trail, k);
         ['L', 'R'].forEach((s) => {
           out.reach[s] = B.reach[s] || A.reach[s];
           out.reachW[s] = lerp(A.reach[s] ? A.reachW[s] : 0, B.reach[s] ? B.reachW[s] : 0, k);
@@ -536,7 +537,7 @@
         const bobW = 0.5 - 0.5 * Math.cos(TAU * (2 * ph - 2 * mid)); // 立脚のまん中で 0
         const bob = o.run ? bobW * o.bob * g.L : (1 - bobW) * o.bob * g.L;
         const sw = Math.cos(TAU * (ph - mid)); // +1: 左脚に乗る
-        P.root = [sw * o.sway * g.L, -drop + bob, 0];
+        P.root = [sw * o.sway * g.L, -drop + bob - (o.low || 0) * g.L, 0];
         const fwd = Math.cos(TAU * ph); // +1: 左脚が前(右腕が前)
         addJ(P, 'hips', o.lean * 0.4, -o.twist * fwd, o.drop * sw);
         addJ(P, 'spine', o.lean * 0.6 + o.pitch * Math.cos(TAU * 2 * (ph - mid)), o.twist * 0.6 * fwd, -o.drop * 0.7 * sw);
@@ -548,6 +549,7 @@
         ['L', 'R'].forEach((s) => {
           const k = s === 'L' ? -af : af; // +1: この腕が前
           const w = freeW[s];
+          if (o.arms === false) return;
           freeArm(P, s, w, -o.arm * k + o.armBase, o.elbow + o.elbowSwing * Math.max(0, k));
           addJ(P, 'shoulder_' + s, -o.arm * 0.3 * k * (1 - w)); // 持ち物のある腕は控えめに
           if (o.run && w > 0) {
@@ -586,7 +588,7 @@
           });
         },
       };
-      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS };
+      const helpers = { fromStatic, breathe, seq, addJ, ease, clamp, lerp, smooth, newPose, copyPose, HANDS, gait, WALK, RUN, freeArm, freeW, ctx };
       if (spec.modes) Object.assign(MODES, spec.modes(helpers));
       const ACTIONS = spec.actions || {};
 
@@ -700,7 +702,13 @@
           j.obj.rotation.set(clamp(x, l.x[0], l.x[1]) * D2R, clamp(y, l.y[0], l.y[1]) * D2R, clamp(z, l.z[0], l.z[1]) * D2R);
         });
         J.hips.position.copy(JL.hips.rest).add(_v.set(P.root[0], P.root[1], P.root[2]));
-        figure.rotation.y = P.yaw * D2R;
+        // 向き(yaw)と宙返り(flip: 腰を中心に前へ回る。度)
+        figure.rotation.set((P.flip || 0) * D2R, P.yaw * D2R, 0, 'YXZ');
+        const fl = (P.flip || 0) * D2R;
+        if (fl) { // 宙返りは腰を中心に回す(向きは従来どおり原点まわり)
+          _v.set(P.root[0], JL.hips.rest.y + P.root[1], P.root[2]);
+          figure.position.copy(_v).sub(_v.clone().applyAxisAngle(XA, fl)).applyAxisAngle(_v.set(0, 1, 0), P.yaw * D2R);
+        } else figure.position.set(0, 0, 0);
         root.updateMatrixWorld(true);
         if (state.ik) { solveLeg('L', P); solveLeg('R', P); }
         if (rideT && armW > 0.001) { solveArm('L', P, armW, rideT.grips.L); solveArm('R', P, armW, rideT.grips.R); }
