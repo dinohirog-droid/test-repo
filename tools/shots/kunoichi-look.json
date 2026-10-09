@@ -1,0 +1,8 @@
+{"page":"index.html?char=kunoichi","size":"900x800","shots":[
+ {"name":"k_front","js":"__studio.step(60)","cam":[0.5,1.0,2.6],"target":[0,0.8,0]},
+ {"name":"k_face","cam":[0.12,1.5,0.62],"target":[0,1.48,0]},
+ {"name":"k_side","cam":[2.4,1.0,0.6],"target":[0,0.8,0]},
+ {"name":"k_back","cam":[-1.0,1.2,-2.4],"target":[0,0.8,0]},
+ {"name":"k_guard","js":"__studio.K.setMode('guard'); __studio.step(90)","cam":[1.4,1.0,2.2],"target":[0,0.75,0]},
+ {"name":"k_stealth","js":"__studio.K.setMode('stealth'); __studio.step(90)","cam":[2.2,0.9,1.4],"target":[0,0.6,0]}
+]}

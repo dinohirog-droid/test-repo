@@ -159,6 +159,50 @@
         g.computeBoundingSphere();
       });
     };
+    // 断面(超楕円)を z 方向に並べてなめらかにつないだ形。secs: [z, 半幅, 上端, 下端, 上の角張り, 下の角張り](2 で楕円)
+    const crs = (p0, p1, p2, p3, t) => {
+      const t2 = t * t, t3 = t2 * t;
+      return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    };
+    U.loftGeo = (secs, steps, around) => {
+      const A = around || 48, St = steps || 8, rows = [];
+      for (let i = 0; i < secs.length - 1; i++) {
+        const p0 = secs[Math.max(0, i - 1)], p1 = secs[i], p2 = secs[i + 1], p3 = secs[Math.min(secs.length - 1, i + 2)];
+        for (let k = 0; k < St; k++) { const r = []; for (let c = 0; c < 6; c++) r.push(crs(p0[c], p1[c], p2[c], p3[c], k / St)); rows.push(r); }
+      }
+      rows.push(secs[secs.length - 1].slice());
+      const pos = [], idx = [], R = rows.length;
+      const fwd = secs[secs.length - 1][0] > secs[0][0]; // 並びの向きで面の表裏が変わるのを補正
+      const tri = (a, b, c) => (fwd ? idx.push(a, c, b) : idx.push(a, b, c));
+      rows.forEach((r) => {
+        const w = Math.max(0.001, r[1]), yc = (r[2] + r[3]) / 2, h = Math.max(0.001, (r[2] - r[3]) / 2);
+        for (let j = 0; j < A; j++) {
+          const th = (j / A) * Math.PI * 2, cs = Math.cos(th), sn = Math.sin(th), n = sn >= 0 ? r[4] : r[5];
+          pos.push(w * Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), yc + h * Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n), r[0]);
+        }
+      });
+      for (let i = 0; i < R - 1; i++) for (let j = 0; j < A; j++) {
+        const a = i * A + j, b = i * A + ((j + 1) % A), c = (i + 1) * A + j, d = (i + 1) * A + ((j + 1) % A);
+        tri(a, c, b); tri(b, c, d);
+      }
+      [0, R - 1].forEach((ri, e) => {
+        const r = rows[ri], ci = pos.length / 3;
+        pos.push(0, (r[2] + r[3]) / 2, r[0]);
+        for (let j = 0; j < A; j++) { const u = ri * A + j, v = ri * A + ((j + 1) % A); if (e === 0) tri(ci, u, v); else tri(ci, v, u); }
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    };
+    // 縦向きのロフト(胴・手足など)。secs: [y, 半幅(X), 前(+Z), 後ろ(-Z の値), 前の角張り, 後ろの角張り]
+    U.loftY = (secs, steps, around) => {
+      const g = U.loftGeo(secs.map((r) => [r[0], r[1], -r[3], -r[2], r[5] || 2.2, r[4] || 2.2]), steps, around);
+      g.rotateX(-Math.PI / 2); // 並び(Z)→ 縦(Y)、上端 → 後ろ(-Z)
+      g.computeVertexNormals();
+      return g;
+    };
     return U;
   }
 
@@ -207,6 +251,8 @@
      *   colors: { id: { label, steel, trim, glow, paint, plume, ... } }
      *   applyColor(ctx, v)                 色替えでキャラ固有に行う処理(マントの柄など)
      *   api(ctx)                           公開 API に追加するもの
+     *   update(ctx, dt, time, pose)        毎フレームの追加処理
+     *   handStyle: { scale, armor, cuff, glow, glove, knuckle, plate }  標準の手の作り
      */
     create(THREE, parentNode, options, spec) {
       options = options || {};
@@ -274,6 +320,7 @@
         colliders: [],      // マント用の球コライダー { obj, c:[x,y,z], r }
         hands: {},
         items: {},          // { R: { name, obj, trail: { base, tip } }, L: {...} } 手に持つもの
+        reach: {},          // 手を伸ばす目標 { 名前: Object3D }(ポーズの reach: { L: '名前' } で使う)
         strands: [],        // 毛の束 { anchor: 'head', points: [[x,y,z]...], width, mat, stiff }
         cape: { anchor: 'chest' }, // マント(null で無し)。pins(u) で上端の固定点を変えられる
       };
@@ -281,17 +328,24 @@
       const NO_OUTLINE = ['glow', 'glowSoft', 'blade', 'bladeCore', 'slit'].concat(spec.noOutline || []).map((k) => M[k]).filter(Boolean);
 
       /* ---------- 手(3 節の指 + 親指)。-Y に垂れ、手のひらは体の側(-m·X)を向く ---------- */
+      // 手の作り: scale(大きさ)/ armor(甲と指の装甲)/ cuff(手首の籠手)/ glow(甲の発光)/ glove・knuckle(手袋と関節の素材名)
+      const HS = Object.assign({ scale: 1, armor: true, cuff: true, glow: true, glove: 'suit', knuckle: 'joint', plate: 'steel' }, spec.handStyle || {});
       function buildStandardHand(s) {
         const m = s === 'L' ? 1 : -1;
-        const wr = J['wrist_' + s];
-        const h = { side: m, fingers: [], thumb: [] };
-        add(wr, U.lathe([[0.05, 0.0], [0.057, -0.025], [0.064, -0.042]]), M.steel);
-        add(wr, U.sphere(0.03), M.joint, [0, -0.012, 0]);
-        add(wr, U.rbox(0.034, 0.08, 0.088, 0.012), M.suit, [0, -0.062, 0]);
-        add(wr, U.rbox(0.075, 0.072, 0.012, 0.008), M.steel, [m * 0.022, -0.06, 0], [0, Math.PI / 2, 0]);
-        add(wr, new THREE.BoxGeometry(0.004, 0.012, 0.07), M.gold, [m * 0.03, -0.028, 0]);
-        add(wr, new THREE.BoxGeometry(0.004, 0.04, 0.008), M.glow, [m * 0.03, -0.063, 0]);
-        add(wr, U.cylZ(0.012, 0.088), M.joint, [0, -0.1, 0]);
+        const wr = new THREE.Group(); // 手の大きさはこのグループで変える(握り点も一緒に動く)
+        wr.scale.setScalar(HS.scale);
+        J['wrist_' + s].add(wr);
+        const G = M[HS.glove], K = M[HS.knuckle], PL = M[HS.plate];
+        const h = { side: m, fingers: [], thumb: [], root: wr };
+        if (HS.cuff) add(wr, U.lathe([[0.05, 0.0], [0.057, -0.025], [0.064, -0.042]]), PL);
+        add(wr, U.sphere(0.03), K, [0, -0.012, 0]);
+        add(wr, U.rbox(0.034, 0.08, 0.088, 0.012), G, [0, -0.062, 0]);
+        if (HS.armor) {
+          add(wr, U.rbox(0.075, 0.072, 0.012, 0.008), PL, [m * 0.022, -0.06, 0], [0, Math.PI / 2, 0]);
+          add(wr, new THREE.BoxGeometry(0.004, 0.012, 0.07), M.gold, [m * 0.03, -0.028, 0]);
+        }
+        if (HS.glow) add(wr, new THREE.BoxGeometry(0.004, 0.04, 0.008), M.glow, [m * 0.03, -0.063, 0]);
+        add(wr, U.cylZ(0.012, 0.088), K, [0, -0.1, 0]);
         const zs = [0.031, 0.0105, -0.0105, -0.031], ks = [0.95, 1.05, 1.0, 0.85];
         const digit = (parent, pos, segs, r) => {
           const nodes = [];
@@ -300,16 +354,16 @@
           parent.add(cur);
           segs.forEach((len, i) => {
             if (i > 0) { const g = new THREE.Group(); g.position.y = -segs[i - 1]; cur.add(g); cur = g; }
-            add(cur, U.sphere(r * 1.05, 12, 8), M.joint);
+            add(cur, U.sphere(r * 1.05, 12, 8), K);
             const rr = r * (1 - i * 0.07);
-            add(cur, U.capsule(rr, Math.max(0.001, len - rr * 1.6)), M.suit, [0, -len / 2, 0]);
-            add(cur, U.rbox(0.007, len * 0.78, rr * 1.9, 0.003), M.steel, [m * rr * 0.8, -len / 2, 0]); // 指の甲の装甲
+            add(cur, U.capsule(rr, Math.max(0.001, len - rr * 1.6)), G, [0, -len / 2, 0]);
+            if (HS.armor) add(cur, U.rbox(0.007, len * 0.78, rr * 1.9, 0.003), PL, [m * rr * 0.8, -len / 2, 0]); // 指の甲の装甲
             nodes.push(cur);
           });
           return nodes;
         };
         for (let i = 0; i < 4; i++) h.fingers.push(digit(wr, [0, -0.104, zs[i]], [0.034 * ks[i], 0.025 * ks[i], 0.021 * ks[i]], 0.0098));
-        add(wr, U.sphere(0.022), M.suit, [-m * 0.012, -0.05, 0.034], 0, [1, 1.3, 1]);
+        add(wr, U.sphere(0.022), G, [-m * 0.012, -0.05, 0.034], 0, [1, 1.3, 1]);
         h.thumb = digit(wr, [-m * 0.014, -0.045, 0.045], [0.03, 0.024, 0.02], 0.0105);
         // 握る点: 指を曲げたときに柄が通る位置(柄の軸は手の Z)
         h.grip = new THREE.Object3D();
@@ -360,7 +414,7 @@
       const STATIC = spec.poses;
       const JNAMES = JOINTS.map((j) => j.name);
       function newPose() {
-        const P = { j: {}, root: [0, 0, 0], yaw: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0 };
+        const P = { j: {}, root: [0, 0, 0], yaw: 0, feet: { L: [0.13, 0, 8, 0, 0, 0], R: [-0.13, 0, -8, 0, 0, 0] }, hand: {}, look: 0, trail: 0, reach: { L: null, R: null }, reachW: { L: 0, R: 0 } };
         JNAMES.forEach((n) => (P.j[n] = [0, 0, 0]));
         ['L', 'R'].forEach((s) => (P.hand[s] = { c: HANDS.relax.c.slice(), th: HANDS.relax.th, sp: HANDS.relax.sp }));
         return P;
@@ -369,6 +423,8 @@
         JNAMES.forEach((n) => { const a = P.j[n] || [0, 0, 0]; Q.j[n][0] = a[0]; Q.j[n][1] = a[1]; Q.j[n][2] = a[2]; });
         for (let i = 0; i < 3; i++) Q.root[i] = P.root[i];
         Q.yaw = P.yaw; Q.look = P.look; Q.trail = P.trail;
+        const pr = P.reach || {}, pw = P.reachW || {};
+        Q.reach = { L: pr.L || null, R: pr.R || null }; Q.reachW = { L: pw.L || 0, R: pw.R || 0 };
         ['L', 'R'].forEach((s) => {
           Q.feet[s] = P.feet[s].slice(); while (Q.feet[s].length < 6) Q.feet[s].push(0);
           Q.hand[s] = { c: P.hand[s].c.slice(), th: P.hand[s].th, sp: P.hand[s].sp };
@@ -387,6 +443,10 @@
         JNAMES.forEach((n) => { for (let i = 0; i < 3; i++) out.j[n][i] = lerp(A.j[n][i], B.j[n][i], k); });
         for (let i = 0; i < 3; i++) out.root[i] = lerp(A.root[i], B.root[i], k);
         out.yaw = lerp(A.yaw, B.yaw, k); out.look = lerp(A.look, B.look, k); out.trail = lerp(A.trail, B.trail, k);
+        ['L', 'R'].forEach((s) => {
+          out.reach[s] = B.reach[s] || A.reach[s];
+          out.reachW[s] = lerp(A.reach[s] ? A.reachW[s] : 0, B.reach[s] ? B.reachW[s] : 0, k);
+        });
         ['L', 'R'].forEach((s) => {
           const a = A.feet[s], b = B.feet[s], o = out.feet[s];
           for (let i = 0; i < 6; i++) o[i] = lerp(a[i] || 0, b[i] || 0, k);
@@ -523,17 +583,21 @@
       }
       // 腕の 2 ボーン IK(乗車用): 握り点をグリップに合わせ、手の甲を上・人差し指を内側へ向ける
       const _a = V3(0, 0, 0), _b = V3(0, 0, 0), _c = V3(0, 0, 0), _hq = new THREE.Quaternion(), _ws = V3(0, 0, 0);
-      function solveArm(s, P, w) {
+      // 手を目標に届かせる腕 IK。目標の X 軸 = 握る棒の向き、Y 軸 = 手の甲を向ける側
+      function solveArm(s, P, w, grip) {
         const m = s === 'L' ? 1 : -1;
         const chest = J.chest, sh = J['shoulder_' + s], el = J['elbow_' + s], fa = J['forearm_' + s], wr = J['wrist_' + s];
-        const grip = rideT.grips[s];
         const gq = grip.getWorldQuaternion(_q);
         const Xb = _a.set(1, 0, 0).applyQuaternion(gq), Up = _b.set(0, 1, 0).applyQuaternion(gq);
         const Zh = Xb.clone().multiplyScalar(-m), Xh = Up.clone().multiplyScalar(m).normalize();
         const Yh = V3(0, 0, 0).crossVectors(Zh, Xh);
         _hq.setFromRotationMatrix(_m.makeBasis(Xh, Yh, Zh));
         model.getWorldScale(_ws);
-        const wristW = grip.getWorldPosition(_c).sub(ctx.hands[s].grip.position.clone().multiplyScalar(_ws.x).applyQuaternion(_hq));
+        // 握り点の手首からのずれ(手の大きさ・縮尺込み)を、目標の手の向きで戻す
+        const hg = ctx.hands[s].grip;
+        wr.updateWorldMatrix(true, false); hg.updateWorldMatrix(true, false);
+        const off = wr.worldToLocal(hg.getWorldPosition(V3(0, 0, 0))).multiplyScalar(_ws.x);
+        const wristW = grip.getWorldPosition(_c).sub(off.applyQuaternion(_hq));
         const tl = chest.worldToLocal(wristW.clone());
         const L1 = el.position.length(), L2 = wr.position.length();
         const d = tl.sub(sh.position);
@@ -571,7 +635,11 @@
         figure.rotation.y = P.yaw * D2R;
         root.updateMatrixWorld(true);
         if (state.ik) { solveLeg('L', P); solveLeg('R', P); }
-        if (rideT && armW > 0.001) { solveArm('L', P, armW); solveArm('R', P, armW); }
+        if (rideT && armW > 0.001) { solveArm('L', P, armW, rideT.grips.L); solveArm('R', P, armW, rideT.grips.R); }
+        else ['R', 'L'].forEach((s) => { // ポーズが指定した目標へ手を伸ばす(刀の両手持ちなど)
+          const tg = P.reach[s] && ctx.reach[P.reach[s]];
+          if (tg && P.reachW[s] > 0.001) { root.updateMatrixWorld(true); solveArm(s, P, P.reachW[s], tg); }
+        });
         ['L', 'R'].forEach((s) => {
           const holding = items[s] && equip[s];
           const h = holding ? HANDS[items[s].hand || 'grip'] : handOverride[s] ? HANDS[handOverride[s]] : P.hand[s];
@@ -852,6 +920,7 @@
         if (cape) cape.update(dt);
         updateStrands(dt);
         if (trail) trail.update(cur.trail, time);
+        if (spec.update) spec.update(ctx, dt, time, cur); // キャラ固有の毎フレーム処理(まばたきなど)
         const pulse = state.pulse ? Math.sin(time * 2.2) : 0; // 発光の点滅(ゆっくり明滅)
         M.glow.emissiveIntensity = (glowBase.glow + pulse * 1.5) * gk;
         M.glowSoft.emissiveIntensity = (glowBase.soft + pulse * 0.6) * gk;

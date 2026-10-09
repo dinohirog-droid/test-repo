@@ -2,7 +2,7 @@
 
 Three.js で作ったサイバーナイトの可動モデルです。形はすべてコードで生成していて、外部の 3D モデルファイルは使っていません。
 
-人型の共通基盤は `humanoid-core.js`、サイバーナイトは `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js`、愛馬「天馬(装甲ペガサス)」は `cyber-steed-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` / `window.CyberSteedModel` に登録されます。three r128 〜 r170 で動きます。
+人型の共通基盤は `humanoid-core.js`、サイバーナイトは `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js`、愛馬「天馬(装甲ペガサス)」は `cyber-steed-model.js`、くノ一は `kunoichi-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` / `window.CyberSteedModel` に登録されます。three r128 〜 r170 で動きます。
 
 ## 動かし方
 
@@ -112,6 +112,24 @@ steed.update(dt, t);
 knight.setWind(steed.getSpeed() * 0.6);
 ```
 
+## くノ一(`kunoichi-model.js`)
+
+共通基盤で作った 2 体目の人型です。6.5 頭身(身長約 1.56 m)で、フードとマスクから大きな目だけが見えます。スタジオでは `index.html?char=kunoichi`(または上部のキャラ切り替えボタン)で表示します。
+
+- 武器: 刀(右手。構えでは左手も腕 IK で柄を握る)、左腰に鞘、背中に短刀、右太ももにクナイ
+- 目: キャンバスに描いたアニメ調の目。表情は 通常 / 驚き / 怒り / 笑い / 悲しみ、まばたきつき
+- マント: 裾がほつれた布(背中に家紋)
+- カラバリ: 紅 / 藍 / 緑 / 紫(目の色も変わります)
+- モーション: 待機・構え・隠密(忍び足)・歩く・走る。跳躍・空中攻撃・手裏剣投げは次の段階で追加予定です
+
+```js
+const kunoichi = KunoichiModel.create(THREE, scene, { scale: 2.4 });
+kunoichi.setMode('guard');      // 'idle' | 'guard' | 'stealth' | 'walk' | 'run'
+kunoichi.setExpr('smile');      // 'normal' | 'surprise' | 'angry' | 'smile' | 'sad'
+kunoichi.setColor('indigo');    // 'crimson' | 'indigo' | 'green' | 'purple'
+kunoichi.update(dt, t, camera);
+```
+
 ## 人型の共通基盤(`humanoid-core.js`)と新しいキャラの作り方
 
 キャラクターに依存しない仕組みは `humanoid-core.js` にまとまっています。キャラのファイルは「定義(spec)」を渡すだけです。
@@ -165,6 +183,7 @@ const blackKnight = HumanoidCore.create(THREE, scene, {}, SPEC);
 | `cyber-knight-model.js` | サイバーナイトの定義(関節・甲冑・武装・ポーズ・技・カラバリ) |
 | `cyber-horse-model.js` | 専用バイク サイバーホース |
 | `cyber-steed-model.js` | 愛馬 天馬(装甲ペガサス) |
+| `kunoichi-model.js` | くノ一の定義(フード・マスク・目の表情・刀・カラバリ) |
 | `index.html` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
 | `examples/r128.html` | r128 への組み込み例(モーション巡回 + バイク + 天馬) |
 | `neon-stage.html` | ネオン街を走るステージ |

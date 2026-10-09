@@ -79,15 +79,18 @@
   <canvas id="view"></canvas>
 
   <div class="panel" id="left">
-    <h1>CYBER KNIGHT</h1>
-    <div class="sub">サイバーナイト</div>
+    <h1 id="char-title">CYBER KNIGHT</h1>
+    <div class="sub" id="char-sub">サイバーナイト</div>
+    <div class="grid" id="chars" style="margin-bottom:6px"></div>
     <p style="margin:0 0 4px"><a href="./neon-stage.html" style="color:#ff3fa4">▶ ネオン街ステージで走る</a></p>
 
     <h2>モーション</h2>
     <div class="grid" id="modes"></div>
 
-    <h2>アクション</h2>
-    <div class="grid" id="actions"></div>
+    <div id="actions-box"><h2>アクション</h2>
+    <div class="grid" id="actions"></div></div>
+    <div id="expr-box" hidden><h2>表情</h2>
+    <div class="grid three" id="exprs"></div></div>
 
     <h2>カラーバリエーション</h2>
     <div class="grid" id="variants"></div>
@@ -98,9 +101,9 @@
     <div class="grid four" id="hand-L"></div>
 
     <h2>武装</h2>
-    <label class="tg"><input type="checkbox" id="eq-sword" /> エネルギーソード(右手)</label>
-    <label class="tg"><input type="checkbox" id="eq-shield" /> エネルギーシールド(左手)</label>
-    <div class="ax"><span>盾の間隔</span><input type="range" id="clearance" min="3" max="20" step="0.5" /><output id="clearance-out"></output></div>
+    <label class="tg"><input type="checkbox" id="eq-sword" /> <span id="eq-sword-label">エネルギーソード(右手)</span></label>
+    <label class="tg" id="eq-shield-row"><input type="checkbox" id="eq-shield" /> エネルギーシールド(左手)</label>
+    <div class="ax" id="clearance-row"><span>盾の間隔</span><input type="range" id="clearance" min="3" max="20" step="0.5" /><output id="clearance-out"></output></div>
 
     <h2>乗り物</h2>
     <div class="grid three" id="vehicles"></div>
@@ -146,6 +149,7 @@
 
   <script src="./humanoid-core.js"></script>
   <script src="./cyber-knight-model.js"></script>
+  <script src="./kunoichi-model.js"></script>
   <script src="./cyber-horse-model.js"></script>
   <script src="./cyber-steed-model.js"></script>
   <!-- ビューア本体。ファイルを直接開いても(file://)動くよう、外部モジュールにせずここに埋め込む -->
@@ -159,7 +163,13 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-const Model = window.CyberKnightModel;
+// キャラクターの切り替え(?char=kunoichi)
+const CHARS = {
+  knight: { model: window.CyberKnightModel, title: 'CYBER KNIGHT', sub: 'サイバーナイト', item: 'エネルギーソード(右手)' },
+  kunoichi: { model: window.KunoichiModel, title: 'KUNOICHI', sub: 'くのいち', item: '刀(右手)' },
+};
+const CHAR = CHARS[new URLSearchParams(location.search).get('char')] ? new URLSearchParams(location.search).get('char') : 'knight';
+const Model = CHARS[CHAR].model;
 
 // ---------- レンダラ / シーン ----------
 const canvas = document.getElementById('view');
@@ -265,8 +275,29 @@ function button(parent, label, onClick, cls = '') {
 }
 const group = (sel, b) => document.querySelectorAll(`${sel} button`).forEach((x) => x.classList.toggle('on', x === b));
 
-const MODE_LABELS = { idle: '待機', guard: '構え', block: '防御', visor: '素顔', walk: '歩く', run: '走る' };
-const ACTION_LABELS = { spin: '回転斬り', charge: '突進' };
+const MODE_LABELS = Model.info.modeLabels || { idle: '待機', guard: '構え', block: '防御', visor: '素顔', walk: '歩く', run: '走る' };
+const ACTION_LABELS = Object.fromEntries(Object.entries({ spin: '回転斬り', charge: '突進' }).filter(([m]) => K.ACTIONS[m]));
+$('#char-title').textContent = CHARS[CHAR].title;
+$('#char-sub').textContent = CHARS[CHAR].sub;
+document.title = CHAR === 'knight' ? 'Cyber Knight' : 'Kunoichi';
+for (const [k, c] of Object.entries(CHARS)) {
+  const b = document.createElement('button');
+  b.textContent = c.sub;
+  if (k === CHAR) b.classList.add('on');
+  b.addEventListener('click', () => { location.search = k === 'knight' ? '' : `?char=${k}`; });
+  $('#chars').appendChild(b);
+}
+$('#actions-box').hidden = !Object.keys(ACTION_LABELS).length;
+$('#eq-sword-label').textContent = CHARS[CHAR].item;
+$('#eq-shield-row').hidden = $('#clearance-row').hidden = !K.setShieldClearance;
+if (K.setExpr) {
+  $('#expr-box').hidden = false;
+  const XL = Model.info.expressionLabels || {};
+  for (const e of K.EXPRESSIONS) {
+    const b = button('#exprs', XL[e] || e, () => { K.setExpr(e); group('#exprs', b); });
+    if (e === K.getExpr()) b.classList.add('on');
+  }
+}
 const modeBtns = {};
 const pickMode = (m) => { if (K.isRiding()) setRide(false); K.setMode(m); };
 for (const [m, label] of Object.entries(MODE_LABELS)) modeBtns[m] = button('#modes', label, () => pickMode(m));
@@ -337,14 +368,14 @@ for (const s of ['R', 'L']) {
   }
 }
 const eqSword = $('#eq-sword'), eqShield = $('#eq-shield');
-eqSword.addEventListener('change', () => { K.setEquip({ sword: eqSword.checked }); syncEquip(); });
-eqShield.addEventListener('change', () => { K.setEquip({ shield: eqShield.checked }); syncEquip(); });
+eqSword.addEventListener('change', () => { K.setEquip({ R: eqSword.checked }); syncEquip(); });
+eqShield.addEventListener('change', () => { K.setEquip({ L: eqShield.checked }); syncEquip(); });
 function syncEquip() {
-  const e = K.getEquip();
-  eqSword.checked = e.sword;
-  eqShield.checked = e.shield;
+  const e = K.getEquip(), nm = (s) => K.items[s] && K.items[s].name;
+  eqSword.checked = !!e[nm('R')];
+  eqShield.checked = !!e[nm('L')];
   for (const s of ['R', 'L']) {
-    const holding = s === 'R' ? e.sword : e.shield;
+    const holding = !!e[nm(s)];
     const cur = holding ? 'grip' : K.getHand(s) || 'grip';
     document.querySelectorAll(`#hand-${s} button`).forEach((b, i) => b.classList.toggle('on', Object.keys(HAND_LABELS)[i] === cur));
   }
@@ -352,10 +383,10 @@ function syncEquip() {
 syncEquip();
 
 const clr = $('#clearance');
-clr.value = K.getShieldClearance() * 100;
+clr.value = K.getShieldClearance ? K.getShieldClearance() * 100 : 5;
 $('#clearance-out').textContent = `${Math.round(clr.value)} cm`;
 clr.addEventListener('input', () => {
-  K.setShieldClearance(clr.value / 100);
+  if (K.setShieldClearance) K.setShieldClearance(clr.value / 100);
   $('#clearance-out').textContent = `${Math.round(clr.value)} cm`;
 });
 

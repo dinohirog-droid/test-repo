@@ -1,0 +1,14 @@
+{
+ "page": "index.html?char=kunoichi",
+ "model": "K",
+ "note": "刀(右手): 刃(+Y)を dir へ、手首を pos へ。構えの左手は腕 IK で柄に添えるので対象外。座標はスタジオのワールド座標(m)",
+ "sides": {
+  "R": { "object": "items.R.obj", "axis": [0, 1, 0], "posObject": "joints.wrist_R",
+   "poses": {
+    "idle": { "pos": [-0.22, 0.74, 0.1], "dir": [-0.2, -0.75, 0.62] },
+    "guard": { "pos": [-0.03, 0.9, 0.3], "dir": [0.08, 0.72, 0.68] },
+    "stealth": { "pos": [-0.2, 0.52, 0.02], "dir": [-0.25, -0.15, -0.95] }
+   }
+  }
+ }
+}
