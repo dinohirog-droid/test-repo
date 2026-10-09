@@ -219,7 +219,8 @@ const sparkGeo = new THREE.BufferGeometry();
 const sparkPos = new Float32Array(260 * 3);
 for (let i = 0; i < 260; i++) sparkPos.set([(Math.random() - 0.5) * 7, Math.random() * 3.5, (Math.random() - 0.5) * 7], i * 3);
 sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-scene.add(new THREE.Points(sparkGeo, new THREE.PointsMaterial({ color: 0x6cc6ff, size: 0.018, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false })));
+const sparks = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ color: 0x6cc6ff, size: 0.018, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+scene.add(sparks);
 
 // ---------- ナイト ----------
 // モデルはセリナと同じ世界の縮尺(既定 2.4)で作り、表示用にメートルへ縮める
@@ -494,6 +495,16 @@ frame();
 window.__studio = {
   K, H, G, camera, controls, bloom, select,
   step: (n, dt = 1 / 60) => { for (let i = 0; i < n; i++) simulate(dt); },
+  // 撮影用: 実時間の進み方に左右されないよう、止めて状態をそろえる(tools/shoot.mjs が呼ぶ)
+  prepare: () => {
+    window.__studio.paused = true;
+    sparks.visible = false;
+    K.setGlowPulse(false);
+    K.setLook(false);
+    K.setMode('idle');
+    for (let i = 0; i < 60; i++) simulate(1 / 60);
+    K.resetPhysics();
+  },
 };
   </script>
 </body>

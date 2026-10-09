@@ -2,7 +2,7 @@
 
 Three.js で作ったサイバーナイトの可動モデルです。形はすべてコードで生成していて、外部の 3D モデルファイルは使っていません。
 
-モデル本体は `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js`、愛馬「天馬(装甲ペガサス)」は `cyber-steed-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` / `window.CyberSteedModel` に登録されます。three r128 〜 r170 で動きます。
+人型の共通基盤は `humanoid-core.js`、サイバーナイトは `cyber-knight-model.js`、専用バイク「サイバーホース」は `cyber-horse-model.js`、愛馬「天馬(装甲ペガサス)」は `cyber-steed-model.js` です。セリナ(`robot-model.js`)や LUNA(`bike-model.js`)と同じく、`info` と `create(THREE, parent, options)` を持つモジュールとして `window.CyberKnightModel` / `window.CyberHorseModel` / `window.CyberSteedModel` に登録されます。three r128 〜 r170 で動きます。
 
 ## 動かし方
 
@@ -24,6 +24,7 @@ Three.js で作ったサイバーナイトの可動モデルです。形はす�
 
 ```html
 <script src="three.min.js"></script>
+<script src="humanoid-core.js"></script>      <!-- 先に読み込む -->
 <script src="cyber-knight-model.js"></script>
 <script>
   const knight = CyberKnightModel.create(THREE, scene, { scale: 2.4 });
@@ -111,6 +112,39 @@ steed.update(dt, t);
 knight.setWind(steed.getSpeed() * 0.6);
 ```
 
+## 人型の共通基盤(`humanoid-core.js`)と新しいキャラの作り方
+
+キャラクターに依存しない仕組みは `humanoid-core.js` にまとまっています。キャラのファイルは「定義(spec)」を渡すだけです。
+
+- 共通基盤が受け持つもの: 関節表から作る骨格(可動域・関節マーカー)、3 節の指の手と握り点、ポーズ補間・キーフレーム・歩く・走る・乗車・手動編集、脚 IK・腕 IK、カメラ目線、マント、毛の束(羽飾り・髪など)、武器の軌跡、輪郭線、発光の点滅、色替えの土台、乗り物への乗り降り
+- キャラのファイルが書くもの: 追加の関節、甲冑や体の形状、持ち物、静止ポーズ、技、連動パーツ、カラーバリエーション
+
+新しい人型キャラは、次のように作れます(`cyber-knight-model.js` が実例です)。
+
+```js
+const SPEC = {
+  name: 'BlackKnight',
+  joints: { extra: [/* 追加の関節。省略すると標準の人型 */] },
+  poses: { idle: { root: [0, 0, 0], j: { /* 関節名: [x, y, z](度) */ }, feet: { L: [0.15, 0, 10], R: [-0.15, 0, -10] } } },
+  build(ctx) {
+    const { U, M, J } = ctx;          // U: 形状ヘルパー(lathe・shell・band・extrude…) / M: 標準マテリアル / J: 関節
+    U.add(J.chest, U.lathe([[0.15, -0.05], [0.22, 0.12], [0.12, 0.34]]), M.steel);
+    ctx.items.R = { name: 'sword', obj: mySword, trail: { base, tip } };  // 右手の握り点 ctx.hands.R.grip に付ける
+    ctx.strands.push({ anchor: 'head', points: [/* [x,y,z] … */], width: 0.03 });
+    ctx.colliders.push({ obj: J.chest, c: [0, 0.12, 0], r: 0.2 });       // マントの当たり判定
+  },
+  modes: (h) => ({ guard: (P, t) => { h.fromStatic(P, 'guard'); h.breathe(P, t, 0.6); } }),
+  colors: { normal: { label: '通常', steel: 0x2b2e35, trim: 0xb08a45, glow: 0xff2a3a } },
+};
+const blackKnight = HumanoidCore.create(THREE, scene, {}, SPEC);
+```
+
+手足の長さを変えたいときは `joints.base` / `joints.side`(関節表)を書き換えます。IK は骨の長さを関節の位置から読むので、そのまま動きます。腕の静止ポーズは `tools/optimize-arms.mjs` で出し直せます。
+
+## 道具(`tools/`)
+
+撮影・見た目の比較・腕ポーズの自動調整のスクリプトです。使い方は `tools/README.md` にあります。変更前後を撮って比べれば、見た目を壊していないか機械的に確かめられます。
+
 ## 機能
 
 - **関節リグ**: 腰・背骨・胸・首・頭・バイザー・肩・肘・前腕ひねり・手首・股関節・膝・足首・つま先。各関節に可動域があり、角度はその範囲に収まるよう制限されます。肘と膝は曲げのみのヒンジで、ひねりは前腕の関節が受け持ちます
@@ -127,9 +161,11 @@ knight.setWind(steed.getSpeed() * 0.6);
 
 | ファイル | 内容 |
 | --- | --- |
-| `cyber-knight-model.js` | モデル本体(形状・リグ・IK・モーション・物理・API) |
+| `humanoid-core.js` | 人型の共通基盤(骨格・手・IK・ポーズ・物理・輪郭線・乗車) |
+| `cyber-knight-model.js` | サイバーナイトの定義(関節・甲冑・武装・ポーズ・技・カラバリ) |
 | `cyber-horse-model.js` | 専用バイク サイバーホース |
 | `cyber-steed-model.js` | 愛馬 天馬(装甲ペガサス) |
 | `index.html` | スタジオ(r170、ブルーム、操作パネル、関節エディタ) |
 | `examples/r128.html` | r128 への組み込み例(モーション巡回 + バイク + 天馬) |
 | `neon-stage.html` | ネオン街を走るステージ |
+| `tools/` | 撮影・比較・腕ポーズ自動調整 |

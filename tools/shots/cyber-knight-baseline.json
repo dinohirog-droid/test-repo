@@ -1,0 +1,121 @@
+{
+ "page": "index.html",
+ "size": "900x800",
+ "shots": [
+  {
+   "name": "b_idle",
+   "js": "__studio.paused=true; __studio.K.setLook(false); __studio.step(120)",
+   "cam": [
+    1.4,
+    1.4,
+    3.2
+   ],
+   "target": [
+    0,
+    1,
+    0
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_guard",
+   "js": "__studio.K.setMode('guard'); __studio.step(90)",
+   "wait": 1200
+  },
+  {
+   "name": "b_spin",
+   "js": "__studio.K.setMode('spin'); __studio.step(68)",
+   "cam": [
+    0.4,
+    2.0,
+    3.6
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_walk",
+   "js": "__studio.K.setMode('walk'); __studio.step(100)",
+   "cam": [
+    3.2,
+    1.3,
+    1.2
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_visor",
+   "js": "__studio.K.setMode('visor'); __studio.step(120)",
+   "cam": [
+    0.9,
+    1.75,
+    1.7
+   ],
+   "target": [
+    0,
+    1.55,
+    0
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_hand",
+   "js": "__studio.K.setEquip({sword:false}); __studio.K.setHand('R','open'); __studio.K.setMode('idle'); __studio.step(60)",
+   "cam": [
+    -1.0,
+    1.0,
+    0.9
+   ],
+   "target": [
+    -0.3,
+    0.9,
+    0.1
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_bike",
+   "js": "__studio.K.setHand('R',null); __studio.K.setEquip({sword:true}); document.querySelectorAll('#vehicles button')[1].click(); document.querySelector('#ride').click(); __studio.step(90)",
+   "cam": [
+    3.2,
+    1.3,
+    1.6
+   ],
+   "target": [
+    0,
+    0.9,
+    0
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_steed",
+   "js": "document.querySelectorAll('#vehicles button')[2].click(); document.querySelector('#ride').click(); __studio.step(90)",
+   "cam": [
+    4.4,
+    2.6,
+    2.6
+   ],
+   "target": [
+    0,
+    1.6,
+    0
+   ],
+   "wait": 1200
+  },
+  {
+   "name": "b_black",
+   "js": "document.querySelectorAll('#vehicles button')[0].click(); __studio.K.setColor('black'); __studio.K.setMode('idle'); __studio.step(60)",
+   "cam": [
+    1.4,
+    1.4,
+    3.2
+   ],
+   "target": [
+    0,
+    1,
+    0
+   ],
+   "wait": 1200
+  }
+ ]
+}

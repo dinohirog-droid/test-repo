@@ -680,6 +680,7 @@
           collide();
         }
         function reset() {
+          time = 0; // 風のゆらぎも最初から(撮影の再現性のため)
           updatePins();
           for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
             const i = (r * cols + c) * 3, p = pins[c];

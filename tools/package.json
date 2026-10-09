@@ -1,0 +1,17 @@
+{
+  "name": "cyber-knight-tools",
+  "private": true,
+  "type": "module",
+  "description": "ヘッドレスブラウザでの撮影・見た目の比較・腕ポーズの自動調整",
+  "scripts": {
+    "shoot": "node shoot.mjs",
+    "compare": "node compare.mjs",
+    "optimize": "node optimize-arms.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "pngjs": "^7.0.0",
+    "three": "0.170.0",
+    "three128": "npm:three@0.128.0"
+  }
+}
