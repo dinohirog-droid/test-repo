@@ -168,7 +168,7 @@
     },
     handStyle: { scale: 0.8, armor: true, cuff: false, glow: false, glove: 'suit', knuckle: 'suit', plate: 'steel' },
     noOutline: ['eyes', 'skin', 'faceFull'],
-    face: { full: { sx: 0.93, mouthY: 0.042, mouthScale: 2.5, cheekY: 0.07 } }, // 目は共通基盤のアニメ調の目(M.eyes)。素顔は顔全体の絵(M.faceFull)
+    face: { full: { sx: 0.93, mouthY: 0.04, mouthScale: 3.3, cheekY: 0.068, eyeScale: 1.22 } }, // 目は共通基盤のアニメ調の目(M.eyes)。素顔は顔全体の絵(M.faceFull)
 
     materials(ctx) {
       const { THREE, U, M } = ctx;
@@ -179,6 +179,16 @@
       M.paint = new THREE.MeshStandardMaterial({ color: C(0xa3142a), roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide });
       M.skin = new THREE.MeshStandardMaterial({ color: C(0xf6dccf), roughness: 0.62, emissive: C(0x3a2a24) }); // フードの影でも肌が沈まないよう少し自発光
       M.hair = new THREE.MeshStandardMaterial({ color: C(0x3a2e50), roughness: 0.62, side: THREE.DoubleSide });
+      M.hairHi = new THREE.MeshStandardMaterial({ color: C(0x4c3e68), roughness: 0.58, side: THREE.DoubleSide }); // 束の明るい側(色の変化を付ける)
+      // 頭を覆う髪のつやの輪(天使の輪): 縦方向の明るい帯を描いた絵を貼る
+      M.hairCap = new THREE.MeshStandardMaterial({ color: C(0xffffff), roughness: 0.6, map: (function () {
+        const cv = document.createElement('canvas'); cv.width = 8; cv.height = 256;
+        const g = cv.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+        gr.addColorStop(0, '#3a2e50'); gr.addColorStop(0.2, '#3a2e50'); gr.addColorStop(0.235, '#7c6aa8'); gr.addColorStop(0.255, '#9a88c8');
+        gr.addColorStop(0.275, '#7c6aa8'); gr.addColorStop(0.31, '#3a2e50'); gr.addColorStop(1, '#3a2e50');
+        g.fillStyle = gr; g.fillRect(0, 0, 8, 256);
+        return U.srgbTex(new THREE.CanvasTexture(cv));
+      })() });
       M.hood = new THREE.MeshStandardMaterial({ color: C(0x3a3746), roughness: 0.8, side: THREE.DoubleSide });
       M.mask = new THREE.MeshStandardMaterial({ color: C(0x2c2a36), roughness: 0.65, side: THREE.DoubleSide });
       M.leather = new THREE.MeshStandardMaterial({ color: C(0x4a3028), roughness: 0.7 });
@@ -306,9 +316,10 @@
         for (let i = 0; i < pa.count; i++) {
           n.set(pa.getX(i), pa.getY(i), pa.getZ(i)).normalize();
           const hairline = 0.56 - 0.22 * Math.max(0, Math.abs(n.x) - 0.45); // 生え際(こめかみ側は少し下がる)
-          const face = sm((n.z - 0.4) / 0.14) * sm((hairline - n.y) / 0.06);
+          const zth = 0.5 - 0.45 * sm((0.05 - n.y) / 0.6); // 顔の縁: こめかみは前寄り、あごに向かって耳の下へ斜めに下がる
+          const face = sm((n.z - zth) / 0.12) * sm((hairline - n.y) / 0.06);
           const ear = sm((0.26 - Math.hypot(Math.abs(n.x) - 0.95, n.y + 0.05, n.z + 0.08)) / 0.08); // 耳のまわりだけ丸く
-          const below = sm((-0.28 - n.y) / 0.08) * sm((n.z + 0.1) / 0.2) + sm((-0.7 - n.y) / 0.08);
+          const below = sm((-0.62 - n.y) / 0.08) * sm((n.z + 0.3) / 0.2) + sm((-0.78 - n.y) / 0.06); // 首まわり(うなじは少し下まで)
           const k = 1 - 0.2 * Math.min(1, face + ear + below);
           pa.setXYZ(i, n.x * SX * k, n.y * SY * k + 0.094, n.z * SZ * k - 0.006);
           nrm.setXYZ(i, n.x / SX, n.y / SY, n.z / SZ); // 楕円の法線(なめらかな陰影)
@@ -318,28 +329,40 @@
       })();
       const tieAt = V3(0, 0.176, -0.072), tieN = V3(0, 0.74, -0.67).normalize();
       ctx.hairParts = [
-        add(head, capGeo, M.hair),
+        add(head, capGeo, M.hairCap),
         add(head, torus(0.017, 0.0065, Math.PI * 2, 8, 20), M.paint, [tieAt.x, tieAt.y, tieAt.z], [Math.atan2(tieN.z, tieN.y) + Math.PI / 2, 0, 0]), // 結び紐
         add(head, sphere(1, 16, 12), M.hair, [0, 0.183, -0.08], 0, [0.022, 0.016, 0.022]), // 結び目の髪のふくらみ
       ];
       // ポニーテール: 結び目から後ろ上へ跳ね、背中へ流れる。頭と背中の球で押し出す
       const ptCols = [{ obj: 'head', c: [0, 0.09, 0], r: 0.1 }, { obj: 'chest', c: [0, 0.14, -0.02], r: 0.13 }, { obj: 'spine', c: [0, 0.06, -0.01], r: 0.12 }];
-      ctx.ponytail = [[0, 1, 0.034], [-1, 0.93, 0.028], [1, 0.95, 0.028], [-2, 0.82, 0.022], [2, 0.86, 0.022]].map(([o, len, w]) => {
-        const x = o * 0.012, pts = [[x * 0.5, 0.18, -0.074], [x * 0.8, 0.192, -0.098], [x, 0.196, -0.13], [x * 1.3, 0.18, -0.165]];
-        for (let k = 1; k <= 6; k++) pts.push([x * (1.4 + k * 0.12), 0.18 - 0.072 * k * len * 1.05, -0.185 - 0.01 * Math.min(k, 3)]);
-        const st = { anchor: 'head', mat: M.hair, width: w, stiff: 0.1, flat: 0.75, taper: 0.8, colliders: ptCols, points: pts };
+      // 細い束を長さ違いで重ね、毛先はとがらせる。束ごとに色を少し変える
+      ctx.ponytail = [[0, 1, 0.026, 0], [-0.6, 0.94, 0.022, 1], [0.6, 0.97, 0.022, 1], [-1.2, 0.86, 0.02, 0], [1.2, 0.9, 0.02, 0],
+        [-1.8, 0.74, 0.016, 1], [1.8, 0.78, 0.016, 1], [-0.3, 0.82, 0.018, 1], [0.3, 0.7, 0.016, 0]].map(([o, len, w, hi], i) => {
+        const x = o * 0.011, dz = (i % 3 - 1) * 0.008, pts = [[x * 0.4, 0.18, -0.074 + dz * 0.3], [x * 0.7, 0.193, -0.098 + dz * 0.5], [x, 0.197, -0.13 + dz], [x * 1.25, 0.181, -0.165 + dz]];
+        for (let k = 1; k <= 6; k++) pts.push([x * (1.3 + k * 0.16) + Math.sin(k * 0.9 + i) * 0.004, 0.18 - 0.072 * k * len * 1.05, -0.185 - 0.01 * Math.min(k, 3) + dz]);
+        const st = { anchor: 'head', mat: hi ? M.hairHi : M.hair, width: w, stiff: 0.1 + 0.02 * (i % 2), flat: 0.7, taper: 0.97, colliders: ptCols, points: pts };
         ctx.strands.push(st);
         return st;
       });
 
-      // 前髪・横髪(フードの縁からのぞく)
-      for (let i = 0; i < 8; i++) {
-        const u = (i / 7) * 2 - 1, x = u * 0.064, L = 0.028 + 0.012 * Math.abs(Math.sin(i * 1.7)) + (Math.abs(u) > 0.7 ? 0.035 : 0); // 中央は短く目にかからない
-        ctx.strands.push({ anchor: 'head', mat: M.hair, width: 0.013, stiff: 0.45, flat: 0.3,
-          points: [[x * 0.9, 0.172, 0.088], [x, 0.166, 0.1], [x * 1.08, 0.172 - L * 0.5, 0.104], [x * 1.12 + u * 0.006, 0.172 - L, 0.1], [x * 1.14 + u * 0.01, 0.168 - L * 1.12, 0.097]] });
+      // 前髪・横髪(フードの縁からのぞく): 奥と手前の 2 層。分け目(やや左)から外へ流れ、毛先はとがる。中央は短く目にかからない
+      const PART = 0.012;
+      const bang = (x, L, w, z, mat) => {
+        const dir = Math.sign(x - PART) || 1, flow = 0.012 + Math.abs(x - PART) * 0.18;
+        ctx.strands.push({ anchor: 'head', mat, width: w, stiff: 0.45, flat: 0.32, taper: 0.97,
+          points: [[x * 0.9, 0.174, z - 0.012], [x, 0.168, z], [x + dir * flow * 0.3, 0.172 - L * 0.5, z + 0.004], [x + dir * flow * 0.75, 0.172 - L, z + 0.002], [x + dir * flow, 0.168 - L * 1.12, z - 0.001]] });
+      };
+      for (let i = 0; i < 7; i++) { // 奥の層
+        const u = (i / 6) * 2 - 1, x = u * 0.066;
+        bang(x, 0.03 + 0.008 * Math.abs(Math.sin(i * 1.7)) + Math.pow(Math.abs(u), 2) * 0.04, 0.016, 0.098, M.hair);
       }
-      [-1, 1].forEach((m) => ctx.strands.push({ anchor: 'head', mat: M.hair, width: 0.02, stiff: 0.25, flat: 0.3,
-        points: [[m * 0.078, 0.15, 0.072], [m * 0.088, 0.11, 0.075], [m * 0.094, 0.06, 0.072], [m * 0.096, 0.01, 0.066], [m * 0.094, -0.03, 0.058], [m * 0.09, -0.06, 0.05]] }));
+      for (let i = 0; i < 6; i++) { // 手前の層(奥の束のあいだに)
+        const u = ((i + 0.5) / 6) * 2 - 1, x = u * 0.062;
+        bang(x, 0.022 + 0.006 * Math.abs(Math.cos(i * 2.1)) + Math.pow(Math.abs(u), 2) * 0.03, 0.011, 0.104, M.hairHi);
+      }
+      // 横髪: 頬に沿って下り、毛先は少し内へ向く
+      [-1, 1].forEach((m) => [[0.02, 0.018, M.hair, 0], [0.013, 0.012, M.hairHi, 0.006]].forEach(([w, , mat, dz]) => ctx.strands.push({ anchor: 'head', mat, width: w, stiff: 0.25, flat: 0.32, taper: 0.95,
+        points: [[m * 0.078, 0.15, 0.072 + dz], [m * 0.088, 0.11, 0.075 + dz], [m * 0.093, 0.06, 0.072 + dz], [m * 0.092, 0.01, 0.068 + dz], [m * 0.086, -0.03, 0.064 + dz], [m * 0.076, -0.055, 0.062 + dz]] })));
       // マフラーの端(紅、背中へ流れる)
       [-1, 1].forEach((m) => ctx.strands.push({ anchor: 'chest', mat: M.paint, width: 0.04, stiff: 0.06, flat: 0.25,
         points: [[m * 0.03, 0.24, -0.06], [m * 0.04, 0.21, -0.1], [m * 0.05, 0.14, -0.13], [m * 0.06, 0.05, -0.15], [m * 0.065, -0.05, -0.16], [m * 0.07, -0.15, -0.17], [m * 0.07, -0.25, -0.17]] }));

@@ -514,7 +514,8 @@
   function faceLayout(L) {
     const S = 512, top = L.cy + L.h / 2;
     const px = (a) => (0.5 + a / L.span) * S, py = (y) => ((top - y) / L.h) * S;
-    return { S, px, py, eye: [px(-L.eyeA), py(L.eyeY + L.eyeH / 2), px(L.eyeA) - px(-L.eyeA), py(L.eyeY - L.eyeH / 2) - py(L.eyeY + L.eyeH / 2)],
+    const es = L.eyeScale || 1, ew = px(L.eyeA) - px(-L.eyeA), eh = py(L.eyeY - L.eyeH / 2) - py(L.eyeY + L.eyeH / 2); // eyeScale: 素顔での目の大きさ
+    return { S, px, py, eye: [S / 2 - ew * es / 2, py(L.eyeY) - eh * es / 2 + eh * (es - 1) * 0.12, ew * es, eh * es],
       mouthY: py(L.mouthY), noseY: py(L.noseY), cheekY: py(L.cheekY), cheekX: px(L.cheekA) - S / 2 };
   }
   function drawMouth(g, x, y, expr, open, s) {
@@ -628,7 +629,7 @@
      *   update(ctx, dt, time, pose)        毎フレームの追加処理
      *   handStyle: { scale, armor, cuff, glow, glove, knuckle, plate }  標準の手の作り
      *   face: true | { draw, expressions, irisStyles, iris, width, height, res, full }  キャンバスに描く目(M.eyes を貼る形状はキャラが作る)。
-     *        full: { span, cy, h, eyeA, eyeY, eyeH, mouthY, noseY, cheekY, cheekA, sx } で素顔用の顔全体の絵 M.faceFull も作る(U.faceUV で貼る)
+     *        full: { span, cy, h, eyeA, eyeY, eyeH, eyeScale, mouthY, mouthScale, noseY, cheekY, cheekA, sx } で素顔用の顔全体の絵 M.faceFull も作る(U.faceUV で貼る)
      *   trailWidth(既定 0.22)/ trailGain(既定 0.75)  武器の軌跡の幅(刃の長さに対する割合)と明るさ
      *   jump: { height, flip, tuck } | false  共通の跳躍(既定 高さ 0.75 m・前宙 360°)
      */
