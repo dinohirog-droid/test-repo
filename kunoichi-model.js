@@ -412,13 +412,13 @@
             const y = last.y + (yEnd - last.y) * f, r = Math.max(Math.hypot(last.x, last.z - HC.z), skinZ(y) + 0.012 + layer * 0.004 - f * 0.002);
             pts.push(V3(r * Math.sin(phiE + dir * 0.04 * f), y, HC.z + r * Math.cos(phiE + dir * 0.04 * f)));
           });
-          return add(head, U.hairLock(pts, w, 0.006, HC, 0.99), layer ? M.hairHi : M.hair);
+          return add(head, U.hairLock(pts, w, 0.0075, HC, 0.97), layer ? M.hairHi : M.hair);
         };
         // 奥の層(中央は短く目にかからない、外ほど長い)と手前の層
         // 毛先の長さをばらつかせ、束を細めにして間から額をのぞかせる(奥の層の中央付近は束を減らす)
         const J = [0.012, -0.016, 0.004, -0.022, 0.018, -0.008, 0.02, -0.014, 0.006];
-        [-46, -32, -18, -2, 20, 34, 48].forEach((a, i) => ctx.hairParts.push(front(a, 0.13 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.05 + J[i], 0.0125, 0)));
-        [-40, -25, -10, 9, 27, 41].forEach((a, i) => ctx.hairParts.push(front(a, 0.138 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.04 + J[(i + 4) % 9] * 1.2, 0.0095, 1)));
+        [-46, -32, -18, -2, 20, 34, 48].forEach((a, i) => ctx.hairParts.push(front(a, 0.13 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.05 + J[i], 0.0185, 0)));
+        [-40, -25, -10, 9, 27, 41].forEach((a, i) => ctx.hairParts.push(front(a, 0.138 - Math.pow(Math.abs(a - PARTD) / 50, 2) * 0.04 + J[(i + 4) % 9] * 1.2, 0.014, 1)));
         // 横髪(顔の横を頬まで)
         [-1, 1].forEach((m) => ctx.hairParts.push(front(m * 58, 0.03, 0.017, 0), front(m * 52, 0.05, 0.013, 1)));
       })();
