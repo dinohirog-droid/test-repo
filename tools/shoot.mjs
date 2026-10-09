@@ -22,11 +22,11 @@ await page.evaluate(() => { const S = window.__studio || window.__stage; if (S &
 if (!argv.includes('--ui')) await page.addStyleTag({ content: '.panel,.hint,#topbar,#title,#touch{display:none!important}' });
 for (const s of shots) {
   if (s.js) await page.evaluate(s.js);
-  if (s.focus) { // 部位にカメラを向ける: { object: 'hands.R.root', offset: [x, y, z](m), model: 'K' }
+  if (s.focus) { // 部位にカメラを向ける: { object: 'hands.R.root', at: [x, y, z](部位の座標), offset: [x, y, z](m), model: 'K' }
     await page.evaluate((f) => {
       const S = window.__studio || window.__stage, M = S[f.model || 'K'];
       const o = f.object.split('.').reduce((a, k) => a[k], M);
-      const p = o.getWorldPosition(S.camera.position.clone());
+      const p = f.at ? o.localToWorld(new (S.camera.position.constructor)(...f.at)) : o.getWorldPosition(S.camera.position.clone()); // at: 部位の中の点(部位の座標)
       S.camera.position.copy(p).add(new p.constructor(...(f.offset || [0, 0, 0.6])));
       if (S.controls) { S.controls.target.copy(p); S.controls.update(); } else S.camera.lookAt(p);
     }, s.focus);

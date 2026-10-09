@@ -167,8 +167,8 @@
       ],
     },
     handStyle: { scale: 0.8, armor: true, cuff: false, glow: false, glove: 'suit', knuckle: 'suit', plate: 'steel' },
-    noOutline: ['eyes', 'skin'],
-    face: true, // 目は共通基盤のアニメ調の目(M.eyes)
+    noOutline: ['eyes', 'skin', 'faceFull'],
+    face: { full: { sx: 0.93, mouthY: 0.042, mouthScale: 2.5, cheekY: 0.07 } }, // 目は共通基盤のアニメ調の目(M.eyes)。素顔は顔全体の絵(M.faceFull)
 
     materials(ctx) {
       const { THREE, U, M } = ctx;
@@ -178,7 +178,7 @@
       M.gold = new THREE.MeshPhysicalMaterial({ color: C(0xb89a5a), metalness: 1, roughness: 0.3, side: THREE.DoubleSide });
       M.paint = new THREE.MeshStandardMaterial({ color: C(0xa3142a), roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide });
       M.skin = new THREE.MeshStandardMaterial({ color: C(0xf6dccf), roughness: 0.62, emissive: C(0x3a2a24) }); // フードの影でも肌が沈まないよう少し自発光
-      M.hair = new THREE.MeshStandardMaterial({ color: C(0x3a2e50), roughness: 0.45, side: THREE.DoubleSide });
+      M.hair = new THREE.MeshStandardMaterial({ color: C(0x3a2e50), roughness: 0.62, side: THREE.DoubleSide });
       M.hood = new THREE.MeshStandardMaterial({ color: C(0x3a3746), roughness: 0.8, side: THREE.DoubleSide });
       M.mask = new THREE.MeshStandardMaterial({ color: C(0x2c2a36), roughness: 0.65, side: THREE.DoubleSide });
       M.leather = new THREE.MeshStandardMaterial({ color: C(0x4a3028), roughness: 0.7 });
@@ -242,15 +242,39 @@
 
       /* ---------- 頭: 顔・目・マスク・フード ---------- */
       const head = J.head;
-      add(head, sphere(1, 32, 20), M.skin, [0, 0.09, 0.0], 0, [0.08, 0.1, 0.088]);
+      // 頭の地肌: 楕円の下半分を細くして、アニメ顔らしい小さなあごにする
+      const headGeo = sphere(1, 48, 32);
+      headGeo.scale(0.08, 0.1, 0.088); headGeo.translate(0, 0.09, 0);
+      (function () {
+        const pa = headGeo.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+          let x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+          const t = clamp((0.075 - y) / 0.085, 0, 1);
+          x *= 1 - 0.36 * Math.pow(t, 1.5);
+          z *= z < 0 ? 1 - 0.35 * t : 1 - 0.1 * t;
+          if (y < 0.0) y -= 0.006 * t;
+          pa.setXYZ(i, x, y, z);
+        }
+        headGeo.computeVertexNormals();
+      })();
+      const headMesh = add(head, headGeo, M.skin);
+      // 素顔の絵(目・眉・頬・鼻・口)。地肌と同じ形を少し大きくして貼る。マスクを着けている間は隠す
+      ctx.faceMesh = add(head, U.faceUV(headGeo.clone(), ctx.face.full), M.faceFull);
+      ctx.faceMesh.scale.setScalar(1.004); ctx.faceMesh.position.y = -0.09 * 0.004;
+      ctx.faceMesh.castShadow = false; ctx.faceMesh.renderOrder = 2;
+      // 耳(フードを外すと見える)
+      ctx.ears = [-1, 1].map((m) => add(head, sphere(1, 16, 12), M.skin, [m * 0.077, 0.088, -0.006], [0, m * 0.35, m * 0.12], [0.009, 0.022, 0.015]));
       // 目(顔の曲面に沿った帯に絵を貼る)
       const eyeGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.066, 32, 1, true, -0.78, 1.56);
       ctx.eyeMesh = add(head, eyeGeo, M.eyes, [0, 0.106, 0.0], 0, [0.93, 1, 1]);
       ctx.eyeMesh.castShadow = false;
       // マスク(顎から目の下まで)
+      const nMask = head.children.length;
       add(head, shell([[0.045, -0.06], [0.06, -0.02], [0.08, 0.01], [0.09, 0.04], [0.093, 0.068], [0.091, 0.081]], 0.004, 40, -1.65, 3.3), M.mask, 0, 0, [1, 1, 1.04]);
       add(head, U.surfaceLine([[0, -0.01, 0.094], [0, 0.03, 0.1], [0, 0.06, 0.1]], 0.004), M.mask); // 鼻筋のしわ
       add(head, band(0.092, 0.081, 0.006, -1.4, 2.8, 0.002), M.paint, 0, 0, [1, 1, 1.04]);
+      ctx.maskParts = head.children.slice(nMask);
+      const nHood = head.children.length;
       // フード(顔の窓を開けた頭巾)と首まわりの垂れ
       const HP = [[0.106, -0.01], [0.113, 0.05], [0.115, 0.11], [0.108, 0.16], [0.088, 0.196], [0.048, 0.217], [0.0, 0.224]];
       const pts = U.curvePts(HP, 12), rng = (a, b) => pts.filter((p) => p.y >= a && p.y <= b);
@@ -265,12 +289,48 @@
       add(head, U.surfaceLine(topEdge, 0.0032), M.paint);
       add(head, U.surfaceLine(sideEdge(1), 0.0032), M.paint);
       add(head, U.surfaceLine(sideEdge(-1), 0.0032), M.paint);
+      ctx.hoodParts = head.children.slice(nHood);
       // フードのひさしを前へ、頭頂を少しとがらせる
       U.deformUnder(ctx.root, head, (p) => {
         if (p.y > 0.14 && p.z > 0) p.z += (p.y - 0.14) * 0.35 * clamp(1 - Math.abs(p.x) / 0.12, 0, 1);
         if (p.y > 0.2) p.y += (p.y - 0.2) * 0.6 * clamp(1 - Math.abs(p.x) / 0.06, 0, 1);
         return p;
-      }, (o) => o === ctx.eyeMesh || o.material === M.skin || ctx.markers.indexOf(o) >= 0 || o.material === M.mask);
+      }, (o) => o === ctx.eyeMesh || o === ctx.faceMesh || o.material === M.skin || ctx.markers.indexOf(o) >= 0 || o.material === M.mask);
+
+      /* ---------- 髪(フードを外したとき): 頭を覆う髪・結び目・高めのポニーテール ---------- */
+      // 頭を覆う髪: 球を頭より少し大きく置き、顔と耳とうなじの下の部分は地肌の内側へ沈める(生え際がなめらかに残る)
+      const capGeo = (function () {
+        const g = new THREE.SphereGeometry(1, 72, 48), pa = g.attributes.position, nrm = g.attributes.normal, n = V3(0, 0, 0);
+        const sm = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+        const SX = 0.088, SY = 0.107, SZ = 0.098;
+        for (let i = 0; i < pa.count; i++) {
+          n.set(pa.getX(i), pa.getY(i), pa.getZ(i)).normalize();
+          const hairline = 0.56 - 0.22 * Math.max(0, Math.abs(n.x) - 0.45); // 生え際(こめかみ側は少し下がる)
+          const face = sm((n.z - 0.4) / 0.14) * sm((hairline - n.y) / 0.06);
+          const ear = sm((0.26 - Math.hypot(Math.abs(n.x) - 0.95, n.y + 0.05, n.z + 0.08)) / 0.08); // 耳のまわりだけ丸く
+          const below = sm((-0.28 - n.y) / 0.08) * sm((n.z + 0.1) / 0.2) + sm((-0.7 - n.y) / 0.08);
+          const k = 1 - 0.2 * Math.min(1, face + ear + below);
+          pa.setXYZ(i, n.x * SX * k, n.y * SY * k + 0.094, n.z * SZ * k - 0.006);
+          nrm.setXYZ(i, n.x / SX, n.y / SY, n.z / SZ); // 楕円の法線(なめらかな陰影)
+        }
+        for (let i = 0; i < nrm.count; i++) { n.fromBufferAttribute(nrm, i).normalize(); nrm.setXYZ(i, n.x, n.y, n.z); }
+        return g;
+      })();
+      const tieAt = V3(0, 0.176, -0.072), tieN = V3(0, 0.74, -0.67).normalize();
+      ctx.hairParts = [
+        add(head, capGeo, M.hair),
+        add(head, torus(0.017, 0.0065, Math.PI * 2, 8, 20), M.paint, [tieAt.x, tieAt.y, tieAt.z], [Math.atan2(tieN.z, tieN.y) + Math.PI / 2, 0, 0]), // 結び紐
+        add(head, sphere(1, 16, 12), M.hair, [0, 0.183, -0.08], 0, [0.022, 0.016, 0.022]), // 結び目の髪のふくらみ
+      ];
+      // ポニーテール: 結び目から後ろ上へ跳ね、背中へ流れる。頭と背中の球で押し出す
+      const ptCols = [{ obj: 'head', c: [0, 0.09, 0], r: 0.1 }, { obj: 'chest', c: [0, 0.14, -0.02], r: 0.13 }, { obj: 'spine', c: [0, 0.06, -0.01], r: 0.12 }];
+      ctx.ponytail = [[0, 1, 0.034], [-1, 0.93, 0.028], [1, 0.95, 0.028], [-2, 0.82, 0.022], [2, 0.86, 0.022]].map(([o, len, w]) => {
+        const x = o * 0.012, pts = [[x * 0.5, 0.18, -0.074], [x * 0.8, 0.192, -0.098], [x, 0.196, -0.13], [x * 1.3, 0.18, -0.165]];
+        for (let k = 1; k <= 6; k++) pts.push([x * (1.4 + k * 0.12), 0.18 - 0.072 * k * len * 1.05, -0.185 - 0.01 * Math.min(k, 3)]);
+        const st = { anchor: 'head', mat: M.hair, width: w, stiff: 0.1, flat: 0.75, taper: 0.8, colliders: ptCols, points: pts };
+        ctx.strands.push(st);
+        return st;
+      });
 
       // 前髪・横髪(フードの縁からのぞく)
       for (let i = 0; i < 8; i++) {
@@ -563,8 +623,22 @@
     },
 
     api(ctx, api) {
+      // フードとマスクの付け外し。フードを外すと髪(ポニーテール)と耳、マスクを外すと素顔(口・頬)が見える
+      const look = { hood: ctx.options.hood !== false, mask: ctx.options.mask !== false };
+      const sync = () => {
+        ctx.hoodParts.forEach((o) => (o.visible = look.hood));
+        ctx.maskParts.forEach((o) => (o.visible = look.mask));
+        ctx.hairParts.concat(ctx.ears).forEach((o) => (o.visible = !look.hood));
+        ctx.ponytail.forEach((st) => st.mesh && (st.mesh.visible = !look.hood));
+        ctx.eyeMesh.visible = look.mask;
+        ctx.faceMesh.visible = !look.mask;
+      };
+      sync();
       return {
         katana: ctx.items.R.obj,
+        setHood: (on) => { look.hood = !!on; sync(); },
+        setMask: (on) => { look.mask = !!on; sync(); },
+        getHood: () => look.hood, getMask: () => look.mask,
         shuriken: ctx.shuriken,
       };
     },
@@ -614,12 +688,12 @@
       create: 'create(THREE, parent, options) → { root, setMode, update, setColor, setExpr, ... }',
       requires: ['humanoid-core.js'],
       modes: ['idle', 'guard', 'stealth', 'walk', 'run', 'jump', 'airAttack', 'slash', 'shuriken', 'ryusei'],
-      expressions: ['normal', 'surprise', 'angry', 'smile', 'sad'],
+      expressions: ['normal', 'surprise', 'angry', 'smile', 'sad', 'shy', 'wink'],
       colors: Object.keys(COLORS),
       height: 1.56,
       modeLabels: { idle: '待機', guard: '構え', stealth: '隠密', walk: '歩く', run: '走る' },
       actionLabels: { jump: '跳躍', airAttack: '空中攻撃', slash: '斬撃', shuriken: '手裏剣', ryusei: '流れ星' },
-      expressionLabels: { normal: '通常', surprise: '驚き', angry: '怒り', smile: '笑い', sad: '悲しみ' },
+      expressionLabels: { normal: '通常', surprise: '驚き', angry: '怒り', smile: '笑い', sad: '悲しみ', shy: '照れ', wink: 'ウィンク' },
       irisStyleLabels: { normal: '瞳: 通常', sparkle: '瞳: 星空', magic: '瞳: 魔法陣' },
       irisStyles: ['normal', 'sparkle', 'magic'],
     },

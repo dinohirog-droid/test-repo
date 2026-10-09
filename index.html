@@ -91,7 +91,8 @@
     <div class="grid" id="actions"></div></div>
     <div id="expr-box" hidden><h2>表情</h2>
     <div class="grid three" id="exprs"></div>
-    <div class="grid three" id="iris-styles" style="margin-top:6px"></div></div>
+    <div class="grid three" id="iris-styles" style="margin-top:6px"></div>
+    <div id="wear-box" hidden><label class="tg"><input type="checkbox" id="wear-hood" checked /> フード</label><label class="tg"><input type="checkbox" id="wear-mask" checked /> マスク</label></div></div>
 
     <h2>カラーバリエーション</h2>
     <div class="grid" id="variants"></div>
@@ -299,6 +300,11 @@ if (K.setExpr) {
   for (const e of K.EXPRESSIONS) {
     const b = button('#exprs', XL[e] || e, () => { K.setExpr(e); group('#exprs', b); });
     if (e === K.getExpr()) b.classList.add('on');
+  }
+  if (K.setHood) {
+    $('#wear-box').hidden = false;
+    $('#wear-hood').onchange = (e) => K.setHood(e.target.checked);
+    $('#wear-mask').onchange = (e) => K.setMask(e.target.checked);
   }
   const IL = Model.info.irisStyleLabels || {};
   for (const st of K.IRIS_STYLES || []) {

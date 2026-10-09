@@ -82,6 +82,7 @@
       <label class="tg"><input type="checkbox" id="markers" checked /> 関節マーカー</label>
       <label class="tg"><input type="checkbox" id="outline" checked /> 輪郭線</label>
       <div id="items"></div>
+      <div id="wear" hidden><label class="tg"><input type="checkbox" id="wear-hood" checked /> フード</label><label class="tg"><input type="checkbox" id="wear-mask" checked /> マスク</label></div>
     </details>
 
     <details open><summary>関節</summary>
@@ -353,6 +354,11 @@ SIDES.forEach((s) => {
   l.querySelector('input').onchange = (e) => K.setEquip({ [s]: e.target.checked });
   $('#items').appendChild(l);
 });
+if (K.setHood) {
+  $('#wear').hidden = false;
+  $('#wear-hood').onchange = (e) => K.setHood(e.target.checked);
+  $('#wear-mask').onchange = (e) => K.setMask(e.target.checked);
+}
 const ls = $('#load-static');
 ls.innerHTML = '<option value="">— 静止ポーズを選ぶ —</option>' + Object.keys(K.poses).map((n) => `<option>${n}</option>`).join('');
 ls.onchange = () => { if (!ls.value) return; loadStatic(K.poses[ls.value]); $('#pose-name').value = ls.value; refresh(); commit(); ls.value = ''; };

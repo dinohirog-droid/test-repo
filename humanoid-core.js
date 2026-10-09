@@ -221,6 +221,19 @@
       bend.get = () => cur;
       return bend;
     };
+    // 顔全体の絵を貼るための UV: 横は顔の正面からの角度(x を sx で割って戻してから)、縦は高さ。L は spec.face.full と同じ値
+    U.faceUV = (geo, L, center) => {
+      const pa = geo.attributes.position, uv = new Float32Array(pa.count * 2), cz = center ? center[2] : 0, cxx = center ? center[0] : 0, sx = L.sx || 1;
+      const top = L.cy + L.h / 2;
+      for (let i = 0; i < pa.count; i++) {
+        const x = (pa.getX(i) - cxx) / sx, y = pa.getY(i), z = pa.getZ(i) - cz;
+        uv[i * 2] = 0.5 + Math.atan2(x, z) / L.span;
+        uv[i * 2 + 1] = 1 - (top - y) / L.h;
+        if (z < 0) uv[i * 2] = uv[i * 2 + 1] = -1; // 後ろ側は絵の外(透明)
+      }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      return geo;
+    };
     U.deformUnder = (rootObj, space, fn, skip) => {
       rootObj.updateMatrixWorld(true);
       const toSpace = new THREE.Matrix4().copy(space.matrixWorld).invert();
@@ -444,7 +457,8 @@
       g.save();
       g.translate(cx, cy);
       g.scale(side, 1); // 片目は鏡像(目頭が中央側)
-      const ex = expr;
+      // ウィンクは片目だけ閉じる(笑い目)、照れは目は通常のまま(頬染めは顔全体の絵で描く)
+      const ex = expr === 'wink' ? (side > 0 ? 'smile' : 'normal') : expr === 'shy' ? 'normal' : expr;
       // 上まぶたの傾き: 怒りは目頭が下がる、悲しみは目頭が上がる
       const tilt = ex === 'angry' ? 0.28 : ex === 'sad' ? -0.22 : 0.06;
       const op = ex === 'surprise' ? 1.16 : ex === 'angry' ? 0.74 : ex === 'sad' ? 0.84 : 1;
@@ -492,7 +506,65 @@
     });
   }
 
-  const FACE_EXPRESSIONS = ['normal', 'surprise', 'angry', 'smile', 'sad'];
+  const FACE_EXPRESSIONS = ['normal', 'surprise', 'angry', 'smile', 'sad', 'shy', 'wink'];
+
+  /* 顔全体の絵(素顔用): 目の絵を顔の位置へ置き、頬染め・鼻・口を描き足す。
+     座標は 512×512 で、横は顔の曲面に沿った角度(span ラジアン)、縦は高さ(h m)に比例する。
+     目の絵は目の帯(角度 ±eyeA、高さ eyeY ± eyeH/2)と同じ場所に置く */
+  function faceLayout(L) {
+    const S = 512, top = L.cy + L.h / 2;
+    const px = (a) => (0.5 + a / L.span) * S, py = (y) => ((top - y) / L.h) * S;
+    return { S, px, py, eye: [px(-L.eyeA), py(L.eyeY + L.eyeH / 2), px(L.eyeA) - px(-L.eyeA), py(L.eyeY - L.eyeH / 2) - py(L.eyeY + L.eyeH / 2)],
+      mouthY: py(L.mouthY), noseY: py(L.noseY), cheekY: py(L.cheekY), cheekX: px(L.cheekA) - S / 2 };
+  }
+  function drawMouth(g, x, y, expr, open, s) {
+    g.save(); g.translate(x, y); g.scale(s, s); g.lineCap = 'round'; g.lineJoin = 'round';
+    const line = '#8a3a44', inner = '#7a1e2c', tongue = '#e0707a';
+    const openShape = (w, h, flatTop) => { // 開いた口: 上辺はほぼ平ら、下は丸い
+      g.beginPath();
+      g.moveTo(-w, 0);
+      if (flatTop) g.quadraticCurveTo(0, -h * 0.25, w, 0); else g.quadraticCurveTo(0, -h, w, 0);
+      g.quadraticCurveTo(w * 0.9, h * 1.1, 0, h * 1.15); g.quadraticCurveTo(-w * 0.9, h * 1.1, -w, 0);
+      g.closePath(); g.fillStyle = inner; g.fill();
+      g.save(); g.clip(); g.fillStyle = tongue; g.beginPath(); g.ellipse(0, h * 1.1, w * 0.7, h * 0.55, 0, 0, Math.PI * 2); g.fill(); g.restore();
+      g.strokeStyle = line; g.lineWidth = 2.2; g.stroke();
+    };
+    if (open > 0.05) openShape(9 + open * 3, 4 + open * 9, false); // 口パク
+    else if (expr === 'smile' || expr === 'wink') openShape(13, 9, true);
+    else if (expr === 'surprise') { g.beginPath(); g.ellipse(0, 4, 6, 8, 0, 0, Math.PI * 2); g.fillStyle = inner; g.fill(); g.strokeStyle = line; g.lineWidth = 2.2; g.stroke(); }
+    else {
+      g.strokeStyle = line; g.lineWidth = 2.6; g.beginPath();
+      if (expr === 'angry') { g.moveTo(-10, 3); g.quadraticCurveTo(0, -3, 10, 3); }
+      else if (expr === 'sad') { g.moveTo(-9, 4); g.bezierCurveTo(-4, -2, 4, -2, 9, 4); }
+      else if (expr === 'shy') { g.moveTo(-9, 1); g.bezierCurveTo(-5, 4, -2, -1, 0, 2); g.bezierCurveTo(2, -1, 5, 4, 9, 1); }
+      else { g.moveTo(-9, 0); g.quadraticCurveTo(0, 5, 9, 0); }
+      g.stroke();
+    }
+    g.restore();
+  }
+  function drawFullFace(g, L, eyeCanvas, expr, mouth) {
+    const F = faceLayout(L), S = F.S;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, S, S);
+    // 頬染め(照れは濃く、斜線を添える)
+    const blush = expr === 'shy' ? 0.55 : expr === 'smile' || expr === 'wink' ? 0.3 : 0.18;
+    [-1, 1].forEach((m) => {
+      const x = S / 2 + m * F.cheekX, y = F.cheekY;
+      const gr = g.createRadialGradient(x, y, 2, x, y, 34);
+      gr.addColorStop(0, `rgba(255,120,140,${blush})`); gr.addColorStop(1, 'rgba(255,120,140,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, 36, 20, 0, 0, Math.PI * 2); g.fill();
+      if (expr === 'shy') {
+        g.strokeStyle = 'rgba(230,90,110,0.6)'; g.lineWidth = 2;
+        for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(x + i * 9 - 4, y + 5); g.lineTo(x + i * 9 + 4, y - 5); g.stroke(); }
+      }
+    });
+    g.drawImage(eyeCanvas, F.eye[0], F.eye[1], F.eye[2], F.eye[3]);
+    // 鼻(小さな影)
+    g.strokeStyle = 'rgba(190,120,110,0.7)'; g.lineWidth = 2.4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(S / 2 + 1, F.noseY - 3); g.lineTo(S / 2 - 1, F.noseY + 3); g.stroke();
+    drawMouth(g, S / 2, F.mouthY, expr, mouth || 0, L.mouthScale || 1.4);
+  }
+
 
   /* 目の画像。描いた目の代わりに画像を使う(透過 PNG 推奨)
      spec = {
@@ -533,7 +605,7 @@
   global.HumanoidCore = {
     version: '2026.10.11',
     HANDS, HAND_LABELS, handDetail, blendHand,
-    drawAnimeEyes: drawEyes, EYE_SIZE: { width: EYE_W, height: EYE_H, res: RES }, FACE_EXPRESSIONS, IRIS_STYLES,
+    drawAnimeEyes: drawEyes, drawFullFace, faceLayout, EYE_SIZE: { width: EYE_W, height: EYE_H, res: RES }, FACE_EXPRESSIONS, IRIS_STYLES,
     STANDARD_BASE,
     STANDARD_SIDE,
     makeUtils,
@@ -555,7 +627,8 @@
      *   api(ctx)                           公開 API に追加するもの
      *   update(ctx, dt, time, pose)        毎フレームの追加処理
      *   handStyle: { scale, armor, cuff, glow, glove, knuckle, plate }  標準の手の作り
-     *   face: true | { draw, expressions, irisStyles, iris, width, height, res }  キャンバスに描く目(M.eyes を貼る形状はキャラが作る)
+     *   face: true | { draw, expressions, irisStyles, iris, width, height, res, full }  キャンバスに描く目(M.eyes を貼る形状はキャラが作る)。
+     *        full: { span, cy, h, eyeA, eyeY, eyeH, mouthY, noseY, cheekY, cheekA, sx } で素顔用の顔全体の絵 M.faceFull も作る(U.faceUV で貼る)
      *   trailWidth(既定 0.22)/ trailGain(既定 0.75)  武器の軌跡の幅(刃の長さに対する割合)と明るさ
      *   jump: { height, flip, tuck } | false  共通の跳躍(既定 高さ 0.75 m・前宙 360°)
      */
@@ -626,7 +699,7 @@
         hands: {},
         items: {},          // { R: { name, obj, trail: { base, tip } }, L: {...} } 手に持つもの
         reach: {},          // 手を伸ばす目標 { 名前: Object3D }(ポーズの reach: { L: '名前' } で使う)
-        strands: [],        // 毛の束 { anchor: 'head', points: [[x,y,z]...], width, mat, stiff }
+        strands: [],        // 毛の束 { anchor: 'head', points: [[x,y,z]...], width, mat, stiff, flat, taper, gravity, colliders: [{ obj, c, r }] }。作ると .mesh が付く
         cape: { anchor: 'chest' }, // マント(null で無し)。pins(u) で上端の固定点を変えられる
       };
       /* ---------- 顔(spec.face): キャンバスに描く目 ----------
@@ -647,6 +720,16 @@
         face.tex = U.srgbTex(new THREE.CanvasTexture(face.canvas));
         M.eyes = new THREE.MeshBasicMaterial({ map: face.tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
         M.eyes.color.setScalar(0.92);
+        if (fs.full) { // 素顔用の顔全体の絵(M.faceFull)。貼る形状は U.faceUV で UV を付けて使う
+          face.full = Object.assign({ span: 2.2, cy: 0.07, h: 0.16, eyeA: 0.78, eyeY: 0.106, eyeH: 0.066, mouthY: 0.034, noseY: 0.066, cheekY: 0.072, cheekA: 0.45, sx: 1 }, fs.full);
+          face.fullCanvas = document.createElement('canvas');
+          face.fullCanvas.width = face.fullCanvas.height = 512;
+          face.fullTex = U.srgbTex(new THREE.CanvasTexture(face.fullCanvas));
+          face.fullTex.anisotropy = 4;
+          M.faceFull = new THREE.MeshBasicMaterial({ map: face.fullTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
+          M.faceFull.color.setScalar(0.94);
+          face.mouth = 0;
+        }
         ctx.face = face;
         if (options.eyeImages) setEyeImages(face, options.eyeImages);
       }
@@ -660,11 +743,12 @@
         if (!face.blinkOn) open = 1;
         let expr = face.expr;
         if (face.autoLive > 0) { face.autoLive--; expr = face.autoExpr; } // 技の間の表情
-        const key = [expr, open.toFixed(1), face.iris.join(), face.irisStyle, face.colorKey, face.imgVer].join('|');
+        const key = [expr, open.toFixed(1), face.iris.join(), face.irisStyle, face.colorKey, face.imgVer, (face.mouth || 0).toFixed(2)].join('|');
         if (key === face.key) return;
         face.key = key;
         face.draw(face.canvas.getContext('2d'), face.iris, expr, open, { style: face.irisStyle, images: eyeImagesFor(face) });
         face.tex.needsUpdate = true;
+        if (face.full) { drawFullFace(face.fullCanvas.getContext('2d'), face.full, face.canvas, expr, face.mouth); face.fullTex.needsUpdate = true; }
       }
       if (spec.materials) spec.materials(ctx);
       const NO_OUTLINE = ['glow', 'glowSoft', 'blade', 'bladeCore', 'slit'].concat(spec.noOutline || []).map((k) => M[k]).filter(Boolean);
@@ -1268,7 +1352,10 @@
         const mesh = new THREE.Mesh(geo, d.mat || M.plume);
         mesh.castShadow = true; mesh.frustumCulled = false;
         strandGroup.add(mesh);
-        return { anchor: J[d.anchor] || d.anchor, rest, mesh, n: nn, SEG, width: d.width || 0.03, stiff: d.stiff !== undefined ? d.stiff : 0.22, flat: d.flat || 0.45,
+        d.mesh = mesh; // 表示の切り替え用(mesh.visible)
+        const cols = (d.colliders || []).map((c) => ({ obj: J[c.obj] || c.obj, c: V3(c.c[0], c.c[1], c.c[2]), r: c.r, w: V3(0, 0, 0), rw: c.r }));
+        return { anchor: J[d.anchor] || d.anchor, rest, mesh, cols, n: nn, SEG, width: d.width || 0.03, stiff: d.stiff !== undefined ? d.stiff : 0.22, flat: d.flat || 0.45,
+          taper: d.taper !== undefined ? d.taper : 0.9, gravity: d.gravity !== undefined ? d.gravity : 1,
           p: rest.map((v) => v.clone()), q: rest.map((v) => v.clone()), lens: rest.slice(1).map((v, i) => v.distanceTo(rest[i])) };
       });
       const sw3 = V3(0, 0, 0), sM = new THREE.Matrix4();
@@ -1278,6 +1365,7 @@
         strands.forEach((st) => {
           sM.copy(toFx(st.anchor));
           const p = st.p, q = st.q;
+          st.cols.forEach((c) => { const mtx = toFx(c.obj); c.w.copy(c.c).applyMatrix4(mtx); c.rw = c.r * sw3.setFromMatrixColumn(mtx, 0).length(); });
           for (let i = 0; i < st.SEG; i++) {
             sw3.copy(st.rest[i]).applyMatrix4(sM);
             if (i < 2 || snap || !state.physics) { p[i].copy(sw3); q[i].copy(sw3); continue; }
@@ -1285,13 +1373,20 @@
             const v = p[i].clone().sub(q[i]).multiplyScalar(0.94);
             q[i].copy(p[i]);
             p[i].add(v).add(sw3.sub(p[i]).multiplyScalar(k));
-            p[i].y += g;
+            p[i].y += g * st.gravity;
             p[i].z -= wind * 0.5 * dt * dt; // 走行風
           }
-          for (let it = 0; it < 3; it++) for (let i = 2; i < st.SEG; i++) {
-            const a = p[i - 1], b = p[i], d = b.clone().sub(a), l = d.length() || 1e-6;
-            if (i > 2) { const c = d.multiplyScalar(((l - st.lens[i - 1]) / l) * 0.5); a.add(c); b.sub(c); }
-            else b.copy(a).add(d.multiplyScalar(st.lens[i - 1] / l));
+          for (let it = 0; it < 3; it++) {
+            for (let i = 2; i < st.SEG; i++) {
+              const a = p[i - 1], b = p[i], d = b.clone().sub(a), l = d.length() || 1e-6;
+              if (i > 2) { const c = d.multiplyScalar(((l - st.lens[i - 1]) / l) * 0.5); a.add(c); b.sub(c); }
+              else b.copy(a).add(d.multiplyScalar(st.lens[i - 1] / l));
+            }
+            // 頭や背中の球から押し出す(ポニーテールが体を突き抜けないように)
+            if (st.cols.length && state.physics && !snap) for (let i = 2; i < st.SEG; i++) st.cols.forEach((c) => {
+              const d = sw3.copy(p[i]).sub(c.w), l = d.length(), r = c.rw + st.width * 0.8;
+              if (l < r) p[i].copy(c.w).addScaledVector(d, r / (l || 1e-6));
+            });
           }
           const side = V3(1, 0, 0).transformDirection(sM);
           const pts = new THREE.CatmullRomCurve3(p).getPoints(st.n - 1);
@@ -1302,7 +1397,7 @@
             t.copy(pts[Math.min(i + 1, st.n - 1)]).sub(pts[Math.max(i - 1, 0)]).normalize();
             bin.copy(side).sub(t.clone().multiplyScalar(side.dot(t))).normalize();
             nrm.crossVectors(t, bin);
-            const r = st.width * Math.sin(Math.min(1, f * 6 + 0.25) * Math.PI / 2) * (1 - f * 0.9);
+            const r = st.width * Math.sin(Math.min(1, f * 6 + 0.25) * Math.PI / 2) * (1 - f * st.taper);
             for (let j = 0; j < RAD; j++) {
               const a = (j / RAD) * Math.PI * 2;
               c.copy(pts[i]).addScaledVector(bin, Math.cos(a) * r * 1.6).addScaledVector(nrm, Math.sin(a) * r * st.flat);
@@ -1535,6 +1630,7 @@
         setIrisStyle: (st) => { if (face.irisStyles.indexOf(st) >= 0) face.irisStyle = st; },
         getIrisStyle: () => face.irisStyle,
         setEyeImages: (s) => setEyeImages(face, s),
+        setMouth: (v) => { face.mouth = Math.max(0, Math.min(1, v || 0)); }, // 口の開き(0〜1。口パク用)
         EXPRESSIONS: face.expressions, IRIS_STYLES: face.irisStyles,
       });
       if (spec.api) Object.assign(api, spec.api(ctx, api));
