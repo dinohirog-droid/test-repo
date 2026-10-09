@@ -182,11 +182,17 @@
       M.hairHi = new THREE.MeshStandardMaterial({ color: C(0x4c3e68), roughness: 0.58, side: THREE.DoubleSide }); // 束の明るい側(色の変化を付ける)
       // 頭を覆う髪のつやの輪(天使の輪): 縦方向の明るい帯を描いた絵を貼る
       M.hairCap = new THREE.MeshStandardMaterial({ color: C(0xffffff), roughness: 0.6, map: (function () {
-        const cv = document.createElement('canvas'); cv.width = 8; cv.height = 256;
+        const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
         const g = cv.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
         gr.addColorStop(0, '#3a2e50'); gr.addColorStop(0.2, '#3a2e50'); gr.addColorStop(0.235, '#7c6aa8'); gr.addColorStop(0.255, '#9a88c8');
         gr.addColorStop(0.275, '#7c6aa8'); gr.addColorStop(0.31, '#3a2e50'); gr.addColorStop(1, '#3a2e50');
-        g.fillStyle = gr; g.fillRect(0, 0, 8, 256);
+        g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+        // 毛流れの筋(頭頂から下へ)
+        for (let i = 0; i < 90; i++) {
+          const x = (i / 90) * 256 + Math.sin(i * 7.3) * 2, a = 0.12 + 0.12 * Math.abs(Math.sin(i * 3.1));
+          g.strokeStyle = i % 2 ? `rgba(15,8,30,${a})` : `rgba(150,130,200,${a * 0.6})`; g.lineWidth = 1 + (i % 3) * 0.6;
+          g.beginPath(); g.moveTo(x, 0); g.bezierCurveTo(x + 3, 80, x - 3, 170, x + Math.sin(i) * 4, 256); g.stroke();
+        }
         return U.srgbTex(new THREE.CanvasTexture(cv));
       })() });
       M.hood = new THREE.MeshStandardMaterial({ color: C(0x3a3746), roughness: 0.8, side: THREE.DoubleSide });
@@ -272,8 +278,7 @@
       ctx.faceMesh = add(head, U.faceUV(headGeo.clone(), ctx.face.full), M.faceFull);
       ctx.faceMesh.scale.setScalar(1.004); ctx.faceMesh.position.y = -0.09 * 0.004;
       ctx.faceMesh.castShadow = false; ctx.faceMesh.renderOrder = 2;
-      // 耳(フードを外すと見える)
-      ctx.ears = [-1, 1].map((m) => add(head, sphere(1, 16, 12), M.skin, [m * 0.077, 0.088, -0.006], [0, m * 0.35, m * 0.12], [0.009, 0.022, 0.015]));
+      ctx.ears = []; // 耳は髪で隠れるので作らない
       // 目(顔の曲面に沿った帯に絵を貼る)
       const eyeGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.066, 32, 1, true, -0.78, 1.56);
       ctx.eyeMesh = add(head, eyeGeo, M.eyes, [0, 0.106, 0.0], 0, [0.93, 1, 1]);
@@ -318,7 +323,7 @@
           const hairline = 0.56 - 0.22 * Math.max(0, Math.abs(n.x) - 0.45); // 生え際(こめかみ側は少し下がる)
           const zth = 0.5 - 0.45 * sm((0.05 - n.y) / 0.6); // 顔の縁: こめかみは前寄り、あごに向かって耳の下へ斜めに下がる
           const face = sm((n.z - zth) / 0.12) * sm((hairline - n.y) / 0.06);
-          const ear = sm((0.26 - Math.hypot(Math.abs(n.x) - 0.95, n.y + 0.05, n.z + 0.08)) / 0.08); // 耳のまわりだけ丸く
+          const ear = 0; // 耳は横の房で隠れる
           const below = sm((-0.62 - n.y) / 0.08) * sm((n.z + 0.3) / 0.2) + sm((-0.78 - n.y) / 0.06); // 首まわり(うなじは少し下まで)
           const k = 1 - 0.2 * Math.min(1, face + ear + below);
           pa.setXYZ(i, n.x * SX * k, n.y * SY * k + 0.094, n.z * SZ * k - 0.006);
@@ -333,6 +338,32 @@
         add(head, torus(0.017, 0.0065, Math.PI * 2, 8, 20), M.paint, [tieAt.x, tieAt.y, tieAt.z], [Math.atan2(tieN.z, tieN.y) + Math.PI / 2, 0, 0]), // 結び紐
         add(head, sphere(1, 16, 12), M.hair, [0, 0.183, -0.08], 0, [0.022, 0.016, 0.022]), // 結び目の髪のふくらみ
       ];
+      // ふんわりした髪の房: 頭頂から横・後ろへふくらみながら耳を覆って下り、毛先は少し内へ。2 層に重ねる(顔の前は空ける)
+      (function () {
+        const HC = V3(0, 0.094, -0.006), SX = 0.088, SY = 0.107, SZ = 0.098, D2 = Math.PI / 180;
+        const lock = (phiDeg, layer) => {
+          const phi = phiDeg * D2, back = Math.max(0, -Math.cos(phi)), sideK = Math.abs(Math.sin(phi));
+          // 始まり: 横は頭頂近く、後ろは結び目の下から(上の髪はポニーテールにまとめる)
+          const th0 = 0.32 + 0.62 * back * back, th1 = 1.72;
+          const jag = 0.014 * Math.sin(phiDeg * 0.37 + layer * 2.1) + 0.008 * Math.sin(phiDeg * 1.13); // 毛先の長さを不ぞろいに
+          const yEnd = 0.022 - 0.035 * back - 0.012 * sideK + (Math.abs(phiDeg) < 70 ? 0.02 : 0) + layer * 0.014 + jag;
+          const pts = [];
+          for (let k = 0; k <= 5; k++) {
+            const th = th0 + (th1 - th0) * (k / 5), puff = 1.05 + 0.1 * Math.sin(Math.PI * Math.min(1, (k / 5) * 1.2)) + layer * 0.05;
+            pts.push(V3(SX * puff * Math.sin(th) * Math.sin(phi), HC.y + SY * puff * Math.cos(th), HC.z + SZ * puff * Math.sin(th) * Math.cos(phi)));
+          }
+          const last = pts[pts.length - 1], dir = V3(Math.sin(phi), 0, Math.cos(phi));
+          const yA = last.y;
+          [0.45, 0.8, 1].forEach((f, i) => { // まっすぐ下りて、毛先は内へ巻く
+            const y = yA + (yEnd - yA) * f;
+            pts.push(V3(last.x - dir.x * (0.004 + i * 0.006) * (i ? 1 : 0.3), y, last.z - dir.z * (0.004 + i * 0.006) * (i ? 1 : 0.3)));
+          });
+          return add(head, U.hairLock(pts, 0.026 + 0.004 * layer, 0.009, HC, 0.86), layer ? M.hairHi : M.hair);
+        };
+        for (let a = 56; a <= 304; a += 14) ctx.hairParts.push(lock(a > 180 ? a - 360 : a, 0));
+        for (let a = 63; a <= 297; a += 14) ctx.hairParts.push(lock(a > 180 ? a - 360 : a, 1));
+      })();
+
       // ポニーテール: 結び目から後ろ上へ跳ね、背中へ流れる。頭と背中の球で押し出す
       const ptCols = [{ obj: 'head', c: [0, 0.09, 0], r: 0.1 }, { obj: 'chest', c: [0, 0.14, -0.02], r: 0.13 }, { obj: 'spine', c: [0, 0.06, -0.01], r: 0.12 }];
       // 細い束を長さ違いで重ね、毛先はとがらせる。束ごとに色を少し変える

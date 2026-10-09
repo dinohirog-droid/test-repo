@@ -234,6 +234,30 @@
       geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       return geo;
     };
+    // 髪の房: 曲線 pts に沿って、根元から毛先へ細くなる平たい束を作る。center から外向きを束の表(厚み方向)にする
+    //   w: 半分の幅、t: 半分の厚み、taper: 毛先の細さ(1 でとがる)
+    U.hairLock = (pts, w, t, center, taper) => {
+      const curve = new THREE.CatmullRomCurve3(pts), N = 24, RR = 8, pos = [], idx = [];
+      const p = V3(0, 0, 0), tg = V3(0, 0, 0), out = V3(0, 0, 0), side = V3(0, 0, 0), nrm = V3(0, 0, 0);
+      taper = taper === undefined ? 0.94 : taper;
+      for (let i = 0; i <= N; i++) {
+        const f = i / N;
+        curve.getPoint(f, p); curve.getTangent(f, tg);
+        out.copy(p).sub(center).normalize();
+        side.crossVectors(tg, out).normalize(); nrm.crossVectors(side, tg).normalize();
+        const wf = w * Math.sin(Math.min(1, f * 5 + 0.35) * Math.PI / 2) * (1 - f * taper), tf = t * (1 - f * 0.6);
+        for (let j = 0; j < RR; j++) {
+          const a = (j / RR) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+          pos.push(p.x + side.x * ca * wf + nrm.x * sa * tf, p.y + side.y * ca * wf + nrm.y * sa * tf, p.z + side.z * ca * wf + nrm.z * sa * tf);
+        }
+      }
+      for (let i = 0; i < N; i++) for (let j = 0; j < RR; j++) { const a = i * RR + j, b = i * RR + ((j + 1) % RR); idx.push(a, b, a + RR, b, b + RR, a + RR); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    };
     U.deformUnder = (rootObj, space, fn, skip) => {
       rootObj.updateMatrixWorld(true);
       const toSpace = new THREE.Matrix4().copy(space.matrixWorld).invert();
